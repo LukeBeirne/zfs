@@ -225,21 +225,22 @@ typedef uint64_t zio_flag_t;
 	/*
 	 * Flags not inherited by any children.
 	 */
-#define	ZIO_FLAG_DONT_QUEUE	(1ULL << 22)	/* must be first for INHERIT */
-#define	ZIO_FLAG_DONT_PROPAGATE	(1ULL << 23)
-#define	ZIO_FLAG_IO_BYPASS	(1ULL << 24)
-#define	ZIO_FLAG_IO_REWRITE	(1ULL << 25)
-#define	ZIO_FLAG_RAW_COMPRESS	(1ULL << 26)
-#define	ZIO_FLAG_RAW_ENCRYPT	(1ULL << 27)
-#define	ZIO_FLAG_GANG_CHILD	(1ULL << 28)
-#define	ZIO_FLAG_DDT_CHILD	(1ULL << 29)
-#define	ZIO_FLAG_GODFATHER	(1ULL << 30)
-#define	ZIO_FLAG_NOPWRITE	(1ULL << 31)
-#define	ZIO_FLAG_REEXECUTED	(1ULL << 32)
-#define	ZIO_FLAG_DELEGATED	(1ULL << 33)
-#define	ZIO_FLAG_PREALLOCATED	(1ULL << 34)
-#define	ZIO_FLAG_POSTREAD	(1ULL << 35)
-#define	ZIO_FLAG_LIGHTWEIGHT	(1ULL << 36)
+#define	ZIO_FLAG_DONT_QUEUE	(1ULL << 21)	/* must be first for INHERIT */
+#define	ZIO_FLAG_DONT_PROPAGATE	(1ULL << 22)
+#define	ZIO_FLAG_IO_BYPASS	(1ULL << 23)
+#define	ZIO_FLAG_IO_REWRITE	(1ULL << 24)
+#define	ZIO_FLAG_RAW_COMPRESS	(1ULL << 25)
+#define	ZIO_FLAG_RAW_ENCRYPT	(1ULL << 26)
+#define	ZIO_FLAG_GANG_CHILD	(1ULL << 27)
+#define	ZIO_FLAG_DDT_CHILD	(1ULL << 28)
+#define	ZIO_FLAG_GODFATHER	(1ULL << 29)
+#define	ZIO_FLAG_NOPWRITE	(1ULL << 30)
+#define	ZIO_FLAG_REEXECUTED	(1ULL << 31)
+#define	ZIO_FLAG_DELEGATED	(1ULL << 32)
+#define	ZIO_FLAG_PREALLOCATED	(1ULL << 33)
+#define	ZIO_FLAG_POSTREAD	(1ULL << 34)
+#define	ZIO_FLAG_LIGHTWEIGHT	(1ULL << 35)
+#define	ZIO_FLAG_ZIA_REEXECUTE	(1ULL << 37)
 
 #define	ZIO_ALLOCATOR_NONE	(-1)
 #define	ZIO_HAS_ALLOCATOR(zio)	((zio)->io_allocator != ZIO_ALLOCATOR_NONE)
@@ -579,6 +580,8 @@ struct zio {
 	zio_batch_t	*io_batch;	/* batch this zio is a member of */
 	zio_batch_t	*io_child_batch; /* batch its vdev children join */
 	zio_t		*io_exec_next;	/* link on a list of zios to execute */
+
+	boolean_t io_can_offload;
 };
 
 enum blk_verify_flag {
@@ -676,6 +679,7 @@ extern void zio_data_buf_free(void *buf, size_t size);
 
 extern void zio_push_transform(zio_t *zio, struct abd *abd, uint64_t size,
     uint64_t bufsize, zio_transform_func_t *transform);
+extern zio_transform_t *zio_pop_transform(zio_t *zio);
 extern void zio_pop_transforms(zio_t *zio);
 
 extern void zio_resubmit_stage_async(void *);
