@@ -63,22 +63,21 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 
 		/* check that compression can be done before offloading */
 		dpusm_pc_t *caps = NULL;
-		if ((zia_get_capabilities(props->provider, &caps) != ZIA_OK) ||
+		if ((zia_get_capabilities(props->compress, &caps) != ZIA_OK) ||
 		    !(caps->compress & compress_to_dpusm(c))) {
 			return (ZIA_FALLBACK);
 		}
 
-		ret = zia_offload_abd(props->provider, src, s_len,
+		ret = zia_offload_abd(props->compress, src, s_len,
 		    props->min_offload_size, local_offload, B_FALSE);
 		if (ret != ZIA_OK) {
 			return (ret);
 		}
 	} else {
 		/* came in offloaded */
-		void *old_provider = dpusm->extract(ABD_HANDLE(src));
-		if (old_provider != props->provider) {
-			return (ZIA_PROVIDER_MISMATCH);
-		}
+		ret = zia_offload_abd_between(props->compress, src, s_len, props->min_offload_size);
+		if (ret != ZIA_OK)
+			return (ret);
 
 		/* use provider to check for zero buffer */
 		ret = dpusm->all_zeros(ABD_HANDLE(src), 0, s_len);
@@ -95,7 +94,7 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 		}
 
 		dpusm_pc_t *caps = NULL;
-		ret = zia_get_capabilities(props->provider, &caps);
+		ret = zia_get_capabilities(props->compress, &caps);
 		if (ret != ZIA_OK) {
 			return (ret);
 		}
@@ -126,7 +125,7 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 	}
 
 	/* nothing to offload, so just allocate space */
-	*cbuf_handle = zia_alloc(props->provider,
+	*cbuf_handle = zia_alloc(props->compress,
 	    s_len, props->min_offload_size);
 	if (!*cbuf_handle) {
 		return (ZIA_ERROR);

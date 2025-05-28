@@ -543,38 +543,71 @@ spa_prop_get_config(spa_t *spa, nvlist_t *nv)
 		    0, ZPROP_SRC_LOCAL);
 	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_COMPRESS,
-	    NULL, zia_props->compress, ZPROP_SRC_LOCAL);
+	if (zia_props->compress != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_COMPRESS,
+                    (char *)zia_get_provider_name(zia_props->compress), 
+                    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_DECOMPRESS,
-	    NULL, zia_props->decompress, ZPROP_SRC_LOCAL);
+	if (zia_props->decompress != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_DECOMPRESS,
+	            (char *)zia_get_provider_name(zia_props->decompress), 
+                    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_CHECKSUM,
-	    NULL, zia_props->checksum, ZPROP_SRC_LOCAL);
+	if (zia_props->checksum != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_CHECKSUM,
+	            (char *)zia_get_provider_name(zia_props->checksum), 
+                    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ1_GEN,
-	    NULL, zia_props->raidz.gen[1], ZPROP_SRC_LOCAL);
+	if (zia_props->raidz.gen[1] != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ1_GEN,
+	            (char *)zia_get_provider_name(zia_props->raidz.gen[1]), 
+                    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ2_GEN,
-	    NULL, zia_props->raidz.gen[2], ZPROP_SRC_LOCAL);
+	if (zia_props->raidz.gen[2] != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ2_GEN,
+	            (char *)zia_get_provider_name(zia_props->raidz.gen[2]), 
+                    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ3_GEN,
-	    NULL, zia_props->raidz.gen[3], ZPROP_SRC_LOCAL);
+	if (zia_props->raidz.gen[3] != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ3_GEN,
+	            (char *)zia_get_provider_name(zia_props->raidz.gen[3]), 
+                    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ1_REC,
-	    NULL, zia_props->raidz.rec[1], ZPROP_SRC_LOCAL);
+	if (zia_props->raidz.rec[1] != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ1_REC,
+	            (char *)zia_get_provider_name(zia_props->raidz.rec[1]), 
+                    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ2_REC,
-	    NULL, zia_props->raidz.rec[2], ZPROP_SRC_LOCAL);
+	if (zia_props->raidz.rec[2] != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ2_REC,
+	            (char *)zia_get_provider_name(zia_props->raidz.rec[2]), 
+                    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ3_REC,
-	    NULL, zia_props->raidz.rec[3], ZPROP_SRC_LOCAL);
+	if (zia_props->raidz.rec[3] != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_RAIDZ3_REC,
+	            (char *)zia_get_provider_name(zia_props->raidz.rec[3]), 
+                    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_FILE_WRITE,
-	    NULL, zia_props->file_write, ZPROP_SRC_LOCAL);
+	if (zia_props->file_write != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_FILE_WRITE,
+		    (char *)zia_get_provider_name(zia_props->file_write),
+		    0, ZPROP_SRC_LOCAL);
+	}
 
-	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_DISK_WRITE,
-	    NULL, zia_props->disk_write, ZPROP_SRC_LOCAL);
+	if (zia_props->disk_write != NULL) {
+		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_DISK_WRITE,
+		    (char *)zia_get_provider_name(zia_props->disk_write),
+		    0, ZPROP_SRC_LOCAL);
+	}
 }
 
 /*
@@ -2251,10 +2284,8 @@ spa_unload(spa_t *spa)
 	spa->spa_raidz_expand = NULL;
 	spa->spa_checkpoint_txg = 0;
 
-	if (zia_get_props(spa)->provider != NULL) {
-		zia_put_provider(&zia_get_props(spa)->provider,
-		    spa->spa_root_vdev);
-	}
+	/* If the providers are not defined, nothing will happen */
+	zia_put_all_providers(zia_get_props(spa), spa->spa_root_vdev);
 
 	spa_config_exit(spa, SCL_ALL, spa);
 }
@@ -9812,25 +9843,30 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			break;
 		case ZPOOL_PROP_ZIA_PROVIDER:
 			strval = fnvpair_value_string(elem);
+			zia_initialize_provider(strval, elem, zia_props,
+			    &zia_props->provider, spa, tx, NULL);
+			/*
 			if (zia_props->provider != NULL)
 				zia_put_provider(&zia_props->provider,
 				    spa->spa_root_vdev);
 			zia_props->provider = zia_get_provider(strval,
 			    spa->spa_root_vdev);
 			zia_props->can_offload = !!zia_props->provider;
-
+			*/
 			/*
 			 * Dirty the configuration on vdevs as above.
 			 */
+			/*
 			if (tx->tx_txg != TXG_INITIAL) {
 				vdev_config_dirty(spa->spa_root_vdev);
 				spa_async_request(spa, SPA_ASYNC_CONFIG_UPDATE);
 			}
-
+			*/
 			/*
 			 * reopen devices so that provider is used
 			 * copied from zfs_ioc_pool_reopen
 			 */
+			/*
 			spa_vdev_state_enter(spa, SCL_NONE);
 			vdev_close(spa->spa_root_vdev);
 			(void) vdev_open(spa->spa_root_vdev);
@@ -9838,113 +9874,121 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 
 			spa_history_log_internal(spa, "set", tx,
 			    "%s=%s", nvpair_name(elem), strval);
+			*/
 			break;
 		case ZPOOL_PROP_ZIA_COMPRESS:
+			strval = fnvpair_value_string(elem);
+			zia_initialize_provider(strval, elem, zia_props,
+			    &zia_props->compress, spa, tx, "Compression");
+
+			/*
+			spa_history_log_internal(spa, "set", tx,
+			    "%s=%s", nvpair_name(elem), strval);
+			zia_prop_warn(!!zia_props->compress,
+			    "Compression");
+			*/
+			break;
+			/*
 			zia_props->compress =
 			    fnvpair_value_uint64(elem);
 			zia_prop_warn(zia_props->compress,
 			    "Compression");
 			break;
+			*/
 		case ZPOOL_PROP_ZIA_DECOMPRESS:
-			zia_props->decompress =
-			    fnvpair_value_uint64(elem);
-			zia_prop_warn(zia_props->decompress,
-			    "Decompression");
+			strval = fnvpair_value_string(elem);
+			zia_initialize_provider(strval, elem, zia_props,
+			    &zia_props->decompress, spa, tx, "Decompression");
 			break;
 		case ZPOOL_PROP_ZIA_CHECKSUM:
-			zia_props->checksum =
-			    fnvpair_value_uint64(elem);
-			zia_prop_warn(zia_props->checksum,
-			    "Checksum");
+			strval = fnvpair_value_string(elem);
+			zia_initialize_provider(strval, elem, zia_props,
+			    &zia_props->checksum, spa, tx, "Checksum");
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ1_GEN:
-			zia_props->raidz.gen[1] =
-			    fnvpair_value_uint64(elem);
-			zia_prop_warn(zia_props->raidz.gen[1],
-			    "RAIDZ 1 Generation");
+			strval = fnvpair_value_string(elem);
+			zia_initialize_provider(strval, elem, zia_props,
+			    &zia_props->raidz.gen[1], spa, tx, "RAIDZ 1 Generation");
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ2_GEN:
-			zia_props->raidz.gen[2] =
-			    fnvpair_value_uint64(elem);
-			zia_prop_warn(zia_props->raidz.gen[2],
-			    "RAIDZ 2 Generation");
+			strval = fnvpair_value_string(elem);
+			zia_initialize_provider(strval, elem, zia_props,
+			    &zia_props->raidz.gen[2], spa, tx, "RAIDZ 2 Generation");
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ3_GEN:
-			zia_props->raidz.gen[3] =
-			    fnvpair_value_uint64(elem);
-			zia_prop_warn(zia_props->raidz.gen[3],
-			    "RAIDZ 3 Generation");
+			strval = fnvpair_value_string(elem);
+			zia_initialize_provider(strval, elem, zia_props,
+			    &zia_props->raidz.gen[3], spa, tx, "RAIDZ 3 Generation");
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ1_REC:
+			if (zia_props->checksum) {
+				strval = fnvpair_value_string(elem);
+				zia_initialize_provider(strval, elem, zia_props,
+				    &zia_props->raidz.rec[1], spa, tx, "RAIDZ 1 Reconstruction");
+			}
+#ifdef _KERNEL
+			else {
+				printk("Z.I.A. RAIDZ 1 Reconstruction "
+				    "requires checksum, but no provider "
+				    "for this task has been found.\n");
+			}
+#endif
+			break;
+			/*
 			zia_props->raidz.rec[1] =
 			    fnvpair_value_uint64(elem);
+			*/
 			/* need checksum */
+			/*
 			if (zia_props->raidz.rec[1]) {
 				if (!zia_props->checksum) {
-					zia_props->checksum = 1;
+					zia_props->checksum = NULL;
 					zia_prop_warn(
-					    zia_props->checksum,
+					    !!zia_props->checksum,
 					    "Checksum");
 				}
 			}
 			zia_prop_warn(zia_props->raidz.rec[1],
 			    "RAIDZ 1 Reconstruction");
 			break;
+			*/
 		case ZPOOL_PROP_ZIA_RAIDZ2_REC:
-			zia_props->raidz.rec[2] =
-			    fnvpair_value_uint64(elem);
-			/* need checksum */
-			if (zia_props->raidz.rec[2]) {
-				if (!zia_props->checksum) {
-					zia_props->checksum = 1;
-					zia_prop_warn(
-					    zia_props->checksum,
-					    "Checksum");
-				}
+			if (zia_props->checksum) {
+				strval = fnvpair_value_string(elem);
+				zia_initialize_provider(strval, elem, zia_props,
+				    &zia_props->raidz.rec[2], spa, tx, "RAIDZ 2 Reconstruction");
 			}
-			zia_prop_warn(zia_props->raidz.rec[2],
-			    "RAIDZ 2 Reconstruction");
+#ifdef _KERNEL
+			else {
+				printk("Z.I.A. RAIDZ 2 Reconstruction"
+				    "requires checksum, but no provider"
+				    "for this task has been found.\n");
+			}
+#endif
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ3_REC:
-			zia_props->raidz.rec[3] =
-			    fnvpair_value_uint64(elem);
-			/* need checksum */
-			if (zia_props->raidz.rec[3]) {
-				if (!zia_props->checksum) {
-					zia_props->checksum = 1;
-					zia_prop_warn(
-					    zia_props->checksum,
-					    "Checksum");
-				}
+			if (zia_props->checksum) {
+				strval = fnvpair_value_string(elem);
+				zia_initialize_provider(strval, elem, zia_props,
+				    &zia_props->raidz.rec[3], spa, tx, "RAIDZ 3 Reconstruction");
 			}
-			zia_prop_warn(zia_props->raidz.rec[3],
-			    "RAIDZ 3 Reconstruction");
+#ifdef _KERNEL
+			else {
+				printk("Z.I.A. RAIDZ 3 Reconstruction"
+				    "requires checksum, but no provider"
+				    "for this task has been found.\n");
+			}
+#endif
 			break;
 		case ZPOOL_PROP_ZIA_FILE_WRITE:
-			zia_props->file_write =
-			    fnvpair_value_uint64(elem);
-
-			/* reopen devices so that provider is used */
-			spa_vdev_state_enter(spa, SCL_NONE);
-			vdev_close(spa->spa_root_vdev);
-			(void) vdev_open(spa->spa_root_vdev);
-			(void) spa_vdev_state_exit(spa, NULL, 0);
-
-			zia_prop_warn(zia_props->file_write,
-			    "File Write");
+			strval = fnvpair_value_string(elem);
+			zia_initialize_provider(strval, elem, zia_props,
+			    &zia_props->file_write, spa, tx, "File Write");
 			break;
 		case ZPOOL_PROP_ZIA_DISK_WRITE:
-			zia_props->disk_write =
-			    fnvpair_value_uint64(elem);
-
-			/* reopen devices so that provider is used */
-			spa_vdev_state_enter(spa, SCL_NONE);
-			vdev_close(spa->spa_root_vdev);
-			(void) vdev_open(spa->spa_root_vdev);
-			(void) spa_vdev_state_exit(spa, NULL, 0);
-
-			zia_prop_warn(zia_props->disk_write,
-			    "Disk Write");
+			strval = fnvpair_value_string(elem);
+			zia_initialize_provider(strval, elem, zia_props,
+			    &zia_props->disk_write, spa, tx, "Disk Write");
 			break;
 		case ZPOOL_PROP_INVAL:
 			if (zpool_prop_feature(elemname)) {

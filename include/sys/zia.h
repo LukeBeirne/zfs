@@ -86,7 +86,7 @@
 
 /*
  * This struct is normally set with
- * zpool set zia_<property>=on/off/<value>
+ * zpool set zia_<property>=<value>
  * and passed around in spa_t.
  */
 typedef struct zia_props {
@@ -97,18 +97,18 @@ typedef struct zia_props {
 	/* minimum size allowed to offload - set by ashift */
 	size_t min_offload_size;
 
-	int compress;
-	int decompress;
+	void *compress;
+	void *decompress;
 
-	int checksum;
+	void *checksum;
 
 	struct {
-		int gen[VDEV_RAIDZ_MAXPARITY + 1];
-		int rec[VDEV_RAIDZ_MAXPARITY + 1];
+		void *gen[VDEV_RAIDZ_MAXPARITY + 1];
+		void *rec[VDEV_RAIDZ_MAXPARITY + 1];
 	} raidz;
 
-	int file_write;
-	int disk_write;
+	void *file_write;
+	void *disk_write;
 } zia_props_t;
 
 zia_props_t *zia_get_props(spa_t *spa);
@@ -117,9 +117,13 @@ void zia_prop_warn(boolean_t val, const char *name);
 int zia_init(void);
 int zia_fini(void);
 
+void zia_initialize_provider(const char *strval, nvpair_t *elem,
+    zia_props_t *zia_props, void **provider, spa_t *spa,
+    dmu_tx_t *tx, const char *name);
 void *zia_get_provider(const char *name, vdev_t *vdev);
 const char *zia_get_provider_name(void *provider);
 int zia_put_provider(void **provider, vdev_t *vdev);
+int zia_put_all_providers(zia_props_t *zia_props, vdev_t *vdev);
 
 /*
  * turn off offloading for this zio as well as
@@ -153,6 +157,8 @@ int zia_onload(void **handle, void *buf, size_t size);
 int zia_offload_abd(void *provider, abd_t *abd,
     size_t size, size_t min_offload_size,
     boolean_t *local_offload, boolean_t lock);
+int zia_offload_abd_between(void *provider, abd_t *abd,
+    size_t size, size_t min_offload_size);
 int zia_onload_abd(abd_t *abd, size_t size,
     boolean_t keep_handle);
 int zia_free_abd(abd_t *abd, boolean_t lock);

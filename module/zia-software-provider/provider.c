@@ -86,21 +86,11 @@
  *
  *     2. Create a zpool
  *
- *     3. Select this provider with
- *            zpool set zia_provider=zia-software-provider <zpool>
+ *     3. Select this provider in "offloading" operations with
+ *            zpool set zia_<operation>=zia_software_provider <zpool>
  *
- *     4. Enable "offloading" of operations with
- *            zpool set zia_compress=on   <zpool>
- *            zpool set zia_decompress=on <zpool>
- *            zpool set zia_checksum=on   <zpool>
- *            zpool set zia_raidz1_gen=on <zpool>
- *            zpool set zia_raidz2_gen=on <zpool>
- *            zpool set zia_raidz3_gen=on <zpool>
- *            zpool set zia_raidz1_rec=on <zpool>
- *            zpool set zia_raidz2_rec=on <zpool>
- *            zpool set zia_raidz3_rec=on <zpool>
- *            zpool set zia_file_write=on <zpool>
- *            zpool set zia_disk_write=on <zpool>
+ *     4. Example usage:
+ *            zpool set zia_compress=zia_software_provider <zpool>
  *
  *     5. Use the zpool as you would normally
  *
@@ -208,6 +198,20 @@ sw_provider_copy_to_generic(dpusm_mv_t *mv, void *buf, size_t size)
 {
 	return (translate_rc(kernel_offloader_copy_to_generic(mv->handle,
 	    mv->offset, buf, size)));
+}
+
+static int
+sw_provider_copy_between_source_memcpy(dpusm_mv_t *src_mv, dpusm_mv_t *dst_mv, size_t size, const dpusm_pf_t *funcs)
+{
+	return (translate_rc(kernel_offloader_copy_between_source_memcpy(src_mv->handle,
+	    dst_mv->handle, size, funcs)));
+
+}
+
+static int
+sw_provider_copy_between_destination_memcpy(void *src, void *dst_handle, size_t size)
+{
+	return (translate_rc(kernel_offloader_copy_between_destination_memcpy(src, dst_handle, size)));
 }
 
 static int
@@ -390,50 +394,56 @@ sw_provider_file_write(void *fp_handle, void *handle, size_t count,
 
 /* BEGIN CSTYLED */
 static const dpusm_pf_t sw_provider_functions = {
-	.algorithms           = sw_provider_algorithms,
-	.alloc                = kernel_offloader_alloc,
-	.alloc_ref            = kernel_offloader_alloc_ref,
-	.get_size             = sw_provider_get_size,
-	.free                 = kernel_offloader_free,
-	.copy                 = {
-	                            .from = {
-	                                        .generic      = sw_provider_copy_from_generic,
-	                                        .ptr          = NULL,
-	                                        .scatterlist  = NULL,
-	                                    },
-	                            .to   = {
-	                                        .generic      = sw_provider_copy_to_generic,
-	                                        .ptr          = NULL,
-	                                        .scatterlist  = NULL,
-	                                    },
-	                        },
-	.mem_stats            = sw_provider_mem_stats,
-	.zero_fill            = sw_provider_zero_fill,
-	.all_zeros            = sw_provider_all_zeros,
-	.compress             = sw_provider_compress,
-	.decompress           = sw_provider_decompress,
-	.checksum             = sw_provider_checksum,
-	.raid                 = {
-	                            .can_compute = sw_provider_raid_can_compute,
-	                            .alloc       = kernel_offloader_raidz_alloc,
-	                            .set_column  = kernel_offloader_raidz_set_column,
-	                            .free        = kernel_offloader_raidz_free,
-	                            .gen         = sw_provider_raid_gen,
-	                            .cmp         = sw_provider_raid_cmp,
-	                            .rec         = sw_provider_raid_rec,
-	                        },
-	.file                 = {
-	                            .open        = kernel_offloader_file_open,
-	                            .write       = sw_provider_file_write,
-	                            .close       = kernel_offloader_file_close,
-	                        },
-	.disk                 = {
-	                            .open        = kernel_offloader_disk_open,
-	                            .invalidate  = kernel_offloader_disk_invalidate,
-	                            .write       = kernel_offloader_disk_write,
-	                            .flush       = kernel_offloader_disk_flush,
-	                            .close       = kernel_offloader_disk_close,
-	                        },
+	.algorithms    = sw_provider_algorithms,
+	.alloc         = kernel_offloader_alloc,
+	.alloc_ref     = kernel_offloader_alloc_ref,
+	.get_size      = sw_provider_get_size,
+	.free          = kernel_offloader_free,
+	.copy          = {
+	                     .from    = {
+	                                    .generic      = sw_provider_copy_from_generic,
+	                                    .ptr          = NULL,
+	                                    .scatterlist  = NULL,
+	                                },
+	                     .to      = {
+	                                    .generic      = sw_provider_copy_to_generic,
+	                                    .ptr          = NULL,
+	                                    .scatterlist  = NULL,
+	                                },
+	                     .between = {
+                                            .source_p2p         = NULL,
+                                            .destination_p2p    = NULL,
+                                            .source_memcpy      = sw_provider_copy_between_source_memcpy,
+                                            .destination_memcpy = sw_provider_copy_between_destination_memcpy,
+	                                },
+	                 },
+	.mem_stats     = sw_provider_mem_stats,
+	.zero_fill     = sw_provider_zero_fill,
+	.all_zeros     = sw_provider_all_zeros,
+	.compress      = sw_provider_compress,
+	.decompress    = sw_provider_decompress,
+	.checksum      = sw_provider_checksum,
+	.raid          = {
+	                     .can_compute = sw_provider_raid_can_compute,
+	                     .alloc       = kernel_offloader_raidz_alloc,
+	                     .set_column  = kernel_offloader_raidz_set_column,
+	                     .free        = kernel_offloader_raidz_free,
+	                     .gen         = sw_provider_raid_gen,
+	                     .cmp         = sw_provider_raid_cmp,
+	                     .rec         = sw_provider_raid_rec,
+	                 },
+	.file          = {
+	                     .open        = kernel_offloader_file_open,
+	                     .write       = sw_provider_file_write,
+	                     .close       = kernel_offloader_file_close,
+	                 },
+	.disk          = {
+	                     .open        = kernel_offloader_disk_open,
+	                     .invalidate  = kernel_offloader_disk_invalidate,
+	                     .write       = kernel_offloader_disk_write,
+	                     .flush       = kernel_offloader_disk_flush,
+	                     .close       = kernel_offloader_disk_close,
+	                 },
 };
 /* END CSTYLED */
 
