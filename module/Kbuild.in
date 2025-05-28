@@ -525,4 +525,16 @@ zia-software-provider-objs += os/linux/zfs/zfs_file_os.o
 $(addprefix $(obj)/zia-software-provider/,$(ZIA_SOFTWARE_PROVIDER_OBJS)) : ccflags-y += -I@abs_top_builddir@ $(ZFS_MODULE_CFLAGS) -I@abs_srcdir@/zia-software-provider/ -I@DPUSM_ROOT@/include
 
 @ZIA_ENABLED_TRUE@KBUILD_EXTRA_SYMBOLS += @DPUSM_SYMBOLS@
+obj-$(CONFIG_ZFS) += zia-software-provider2.o
+
+ZIA_SOFTWARE_PROVIDER2_OBJS := \
+	provider.o \
+	kernel_offloader.o
+
+zia-software-provider2-objs += $(addprefix zia-software-provider/,$(ZIA_SOFTWARE_PROVIDER2_OBJS))
+# zfs_file_os does not have any dependencies, so just link to it directly
+zia-software-provider2-objs += os/linux/zfs/zfs_file_os.o
+
+$(addprefix $(obj)/zia-software-provider/,$(ZIA_SOFTWARE_PROVIDER2_OBJS)) : ccflags-y += -I@abs_top_builddir@ $(ZFS_MODULE_CFLAGS) -I@abs_srcdir@/zia-software-provider/ -I@DPUSM_ROOT@/include
+
 endif

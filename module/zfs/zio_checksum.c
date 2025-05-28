@@ -424,9 +424,9 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		/* only offload non-embedded checksums */
 		boolean_t local_offload = B_FALSE;
 		zia_props_t *zia_props = zia_get_props(spa);
-		if ((zia_props->checksum == 1) &&
+		if ((zia_props->checksum) &&
 		    (zio->io_can_offload == B_TRUE)) {
-			zia_rc = zia_checksum_compute(zia_props->provider,
+			zia_rc = zia_checksum_compute(zia_props->checksum,
 			    &cksum, checksum, zio, size, &local_offload);
 		}
 
@@ -543,7 +543,7 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 		zia_props_t *zia_props = zia_get_props(spa);
 		int error = ZIA_FALLBACK;
 		if ((zia_props->can_offload == B_TRUE) &&
-		    (zia_props->checksum == 1)) {
+		    (zia_props->checksum)) {
 			error = zia_checksum_error(checksum, abd, size,
 			    byteswap, &actual_cksum);
 		}

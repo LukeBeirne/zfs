@@ -567,7 +567,7 @@ zio_decompress(zio_t *zio, abd_t *data, uint64_t size)
 	if (zio->io_error == 0) {
 		int ret = ZIA_FALLBACK;
 		zia_props_t *zia_props = zia_get_props(zio->io_spa);
-		if ((zia_props->decompress == 1) &&
+		if ((zia_props->decompress) &&
 		    (zio->io_can_offload == B_TRUE)) {
 			ret = zia_decompress(zia_props,
 			    BP_GET_COMPRESS(zio->io_bp),
@@ -2068,7 +2068,7 @@ zio_write_compress(zio_t *zio)
 		} else {
 			int zia_rc = ZIA_FALLBACK;
 			zia_props_t *zia_props = zia_get_props(spa);
-			if ((zia_props->compress == 1) &&
+			if ((zia_props->compress) &&
 			    (zio->io_can_offload == B_TRUE)) {
 				zia_rc = zia_compress(zia_props, compress,
 				    zio->io_abd, lsize, &cabd, &psize,

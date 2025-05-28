@@ -147,6 +147,10 @@ module_param(copy_from_generic_down_max, int, 0660);
 static kod_t copy_to_generic_down; static int copy_to_generic_down_max = 0;
 module_param(copy_to_generic_down_max, int, 0660);
 
+static kod_t copy_between_generic_down;
+static int copy_between_generic_down_max = 0;
+module_param(copy_between_generic_down_max, int, 0660);
+
 static kod_t cmp_down; static int cmp_down_max = 0;
 module_param(cmp_down_max, int, 0660);
 
@@ -185,6 +189,7 @@ kernel_offloader_init(void)
 
 	kod_init(copy_from_generic_down, copy_from_generic_down_max);
 	kod_init(copy_to_generic_down, copy_to_generic_down_max);
+	kod_init(copy_between_generic_down, copy_between_generic_down_max);
 	kod_init(cmp_down, cmp_down_max);
 	kod_init(compress_down, compress_down_max);
 	kod_init(checksum_down, checksum_down_max);
@@ -446,6 +451,27 @@ kernel_offloader_copy_to_scatterlist(void *handle, size_t offset,
 		return (KERNEL_OFFLOADER_ERROR);
 	}
 
+	return (KERNEL_OFFLOADER_OK);
+}
+
+int
+kernel_offloader_copy_between_source_memcpy(void *src_handle,
+    void *dst_handle, size_t size, const dpusm_pf_t *funcs)
+{
+	koh_t *src_koh = (koh_t *)unswizzle(src_handle);
+	void *src = ptr_start(src_koh, 0);
+	return (funcs->copy.between.destination_memcpy(src, dst_handle, size));
+}
+
+int
+kernel_offloader_copy_between_destination_memcpy(void *src,
+    void *dst_handle, size_t size) {
+	koh_t *dst_koh = (koh_t *)unswizzle(dst_handle);
+	void *dst = ptr_start(dst_koh, 0);
+
+	if (memcpy(dst, src, size) != dst) {
+		return (KERNEL_OFFLOADER_ERROR);
+	}
 	return (KERNEL_OFFLOADER_OK);
 }
 

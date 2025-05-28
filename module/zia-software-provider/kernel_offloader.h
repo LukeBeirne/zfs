@@ -114,7 +114,10 @@ int kernel_offloader_copy_to_generic(void *handle, size_t offset,
     void *dst, size_t size);
 int kernel_offloader_copy_to_scatterlist(void *ptr, size_t offset,
     struct scatterlist *sgl, unsigned int nents, size_t size);
-
+int kernel_offloader_copy_between_source_memcpy(void *src_handle,
+    void *dst_handle, size_t size, const dpusm_pf_t *funcs);
+int kernel_offloader_copy_between_destination_memcpy(void *src,
+    void *dst_handle, size_t size);
 /* status check */
 int kernel_offloader_mem_stats(
     void *t_count_handle, void *t_size_handle, void *t_actual_handle,

@@ -86,21 +86,11 @@
  *
  *     2. Create a zpool
  *
- *     3. Select this provider with
- *            zpool set zia_provider=zia-software-provider <zpool>
+ *     3. Select this provider in "offloading" operations with
+ *            zpool set zia_<operation>=zia_software_provider <zpool>
  *
- *     4. Enable "offloading" of operations with
- *            zpool set zia_compress=on   <zpool>
- *            zpool set zia_decompress=on <zpool>
- *            zpool set zia_checksum=on   <zpool>
- *            zpool set zia_raidz1_gen=on <zpool>
- *            zpool set zia_raidz2_gen=on <zpool>
- *            zpool set zia_raidz3_gen=on <zpool>
- *            zpool set zia_raidz1_rec=on <zpool>
- *            zpool set zia_raidz2_rec=on <zpool>
- *            zpool set zia_raidz3_rec=on <zpool>
- *            zpool set zia_file_write=on <zpool>
- *            zpool set zia_disk_write=on <zpool>
+ *     4. Example usage:
+ *            zpool set zia_compress=zia_software_provider <zpool>
  *
  *     5. Use the zpool as you would normally
  *
@@ -222,6 +212,23 @@ sw_provider_copy_to_scatterlist(dpusm_mv_t *mv,
     struct scatterlist *sgl, unsigned int nents, size_t size) {
 	return (translate_rc(kernel_offloader_copy_to_scatterlist(mv->handle,
 	    mv->offset, sgl, nents, size)));
+}
+
+static int
+sw_provider_copy_between_source_memcpy(dpusm_mv_t *src_mv, dpusm_mv_t *dst_mv,
+    size_t size, const dpusm_pf_t *funcs)
+{
+	return (translate_rc(kernel_offloader_copy_between_source_memcpy(
+	    src_mv->handle, dst_mv->handle, size, funcs)));
+
+}
+
+static int
+sw_provider_copy_between_destination_memcpy(void *src, void *dst_handle,
+    size_t size)
+{
+	return (translate_rc(kernel_offloader_copy_between_destination_memcpy(
+	    src, dst_handle, size)));
 }
 
 static int
@@ -419,6 +426,12 @@ static const dpusm_pf_t sw_provider_functions = {
 	                                        .generic      = sw_provider_copy_to_generic,
 	                                        .ptr          = NULL,
 	                                        .scatterlist  = sw_provider_copy_to_scatterlist,
+	                                    },
+	                            .between = {
+                                                .source_p2p         = NULL,
+                                                .destination_p2p    = NULL,
+                                                .source_memcpy      = sw_provider_copy_between_source_memcpy,
+                                                .destination_memcpy = sw_provider_copy_between_destination_memcpy,
 	                                    },
 	                        },
 	.mem_stats            = sw_provider_mem_stats,

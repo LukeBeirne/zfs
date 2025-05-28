@@ -160,7 +160,8 @@ typedef enum zfs_error {
 	EZFS_SHAREFAILED,	/* filesystem share failed */
 	EZFS_RAIDZ_EXPAND_IN_PROGRESS,	/* a raidz is currently expanding */
 	EZFS_ASHIFT_MISMATCH,   /* can't add vdevs with different ashifts */
-	EZFS_ZIA_NONEXISTENT_PROVIDER,   /* given provider does not exist */
+	EZFS_ZIA_NONEXISTENT_PROVIDER, /* given provider does not exist */
+	EZFS_ZIA_NONCAPABLE_PROVIDER, /* given provider cannot perform assigned task */
 	EZFS_UNKNOWN
 } zfs_error_t;
 
