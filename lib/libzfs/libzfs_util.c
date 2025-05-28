@@ -319,6 +319,8 @@ libzfs_error_description(libzfs_handle_t *hdl)
 		    "user namespace support (CONFIG_USER_NS)"));
 	case EZFS_ZIA_NONEXISTENT_PROVIDER:
 		return (dgettext(TEXT_DOMAIN, "given provider does not exist"));
+	case EZFS_ZIA_NONCAPABLE_PROVIDER:
+		return (dgettext(TEXT_DOMAIN, "given provider cannot perform assigned task"));
 	case EZFS_UNKNOWN:
 		return (dgettext(TEXT_DOMAIN, "unknown error"));
 	default:
@@ -781,6 +783,9 @@ zpool_standard_error_fmt(libzfs_handle_t *hdl, int error, const char *fmt, ...)
 		break;
 	case ZFS_ERR_ZIA_NONEXISTENT_PROVIDER:
 		zfs_verror(hdl, EZFS_ZIA_NONEXISTENT_PROVIDER, fmt, ap);
+		break;
+	case ZFS_ERR_ZIA_NONCAPABLE_PROVIDER:
+		zfs_verror(hdl, EZFS_ZIA_NONCAPABLE_PROVIDER, fmt, ap);
 		break;
 	default:
 		zfs_error_aux(hdl, "%s", zfs_strerror(error));
