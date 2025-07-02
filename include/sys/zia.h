@@ -109,7 +109,16 @@ typedef struct zia_props {
 
 	void *file_write;
 	void *disk_write;
+
+	list_t providers;
 } zia_props_t;
+
+typedef struct zia_providers {
+	void *provider;
+	void *vdev_handle;
+	int count;
+	list_node_t node;
+} zia_providers_t;
 
 zia_props_t *zia_get_props(spa_t *spa);
 void zia_prop_warn(boolean_t val, const char *name);
@@ -120,9 +129,9 @@ int zia_fini(void);
 void zia_initialize_provider(const char *strval, nvpair_t *elem,
     zia_props_t *zia_props, void **provider, spa_t *spa,
     dmu_tx_t *tx, const char *name);
-void *zia_get_provider(const char *name, vdev_t *vdev);
+void *zia_get_provider(const char *name, vdev_t *vdev, zia_props_t *zia_props);
 const char *zia_get_provider_name(void *provider);
-int zia_put_provider(void **provider, vdev_t *vdev);
+int zia_put_provider(void **provider, vdev_t *vdev, zia_props_t *zia_props);
 int zia_put_all_providers(zia_props_t *zia_props, vdev_t *vdev);
 
 /*
@@ -220,12 +229,12 @@ int zia_file_close(vdev_t *vdev);
 
 /* disk I/O */
 int zia_disk_open(vdev_t *vdev, const char *path,
-    struct block_device *bdev);
+    struct block_device *bdev, void *provider);
 int zia_disk_invalidate(vdev_t *vdev);
 int zia_disk_write(vdev_t *vdev, zio_t *zio, int flags,
     boolean_t *local_offload);
 int zia_disk_flush(vdev_t *vdev, zio_t *zio);
-int zia_disk_close(vdev_t *vdev);
+int zia_disk_close(vdev_t *vdev, void *provider);
 #endif
 #endif
 

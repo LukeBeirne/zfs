@@ -293,7 +293,7 @@ zia_fini(void)
 
 #ifdef ZIA
 /* recursively find all leaf vdevs and open them */
-static int zia_open_vdevs(vdev_t *vd) {
+static int zia_open_vdevs(vdev_t *vd, void *provider) {
 	int ret = ZIA_OK;
 	vdev_ops_t *ops = vd->vdev_ops;
 	if (ops->vdev_op_leaf) {
@@ -311,19 +311,46 @@ static int zia_open_vdevs(vdev_t *vd) {
 				/* first member is struct block_device * */
 				//void *disk = BDH_BDEV(((vdev_disk_t *)vd->vdev_tsd)->vd_bdh);
 				void *disk = vd->vdev_tsd;
-				ret = zia_disk_open(vd, vd->vdev_path, disk);
+#ifdef _KERNEL
+				printk("ZIA TEST: %s: disk open", __func__);
+#endif
+				ret = zia_disk_open(vd, vd->vdev_path, disk, provider);
 			}
 #endif
 		}
 	} else {
 		for (uint64_t i = 0; i < vd->vdev_children; i++) {
 			vdev_t *child = vd->vdev_child[i];
-			zia_open_vdevs(child);
+			ret = zia_open_vdevs(child, provider);
+#ifdef _KERNEL
+			printk("ZIA TEST: %s: ret 2 = %d", __func__, ret);
+#endif
 		}
 	}
+#ifdef _KERNEL
+	printk("ZIA TEST: %s: returning ret = %d", __func__, ret);
+#endif
 	return ret;
 }
 #endif
+
+/*
+ * search list of zia_providers_t
+ * for one particular provider
+ */
+static zia_providers_t *
+zia_search_providers(list_t *list, void *provider) {
+	zia_providers_t *item;
+
+	for(item = list_head(list);
+	    item != NULL;
+	    item = list_next(list, item)) {
+		if (item->provider == provider) {
+			return item;
+		}
+	}
+	return NULL;
+}
 
 #ifdef ZIA
 void
@@ -333,19 +360,39 @@ zia_initialize_provider(const char *strval, nvpair_t *elem,
 {
 	if (strcmp(strval, "NULL") == 0 || strcmp(strval, "off") == 0) {
 		zia_put_provider(provider,
-		    spa->spa_root_vdev);
+		    spa->spa_root_vdev, zia_props);
 		return;
 	}
-		
-	void *new_provider = zia_get_provider(strval, NULL);
 
-	if (new_provider == NULL) {
+	int found = 0;
+	zia_providers_t *item;
+	void *new_provider;
+	if (!list_is_empty(&zia_props->providers)) {
+		item = zia_search_providers(&zia_props->providers, provider);
+		if (item != NULL) {
+#ifdef _KERNEL
+			printk("ZIA TEST: Provider found in list");
+#endif
+			found = 1;
+			item->count++;
+			new_provider = item->provider;
+		}
+	}
+
+	if (!found) {
+		new_provider = zia_get_provider(strval, spa->spa_root_vdev, zia_props);
+	}
+#ifdef _KERNEL
+	printk("ZIA TEST: %s: new_provider = %p", __func__, new_provider);
+#endif
+
+	if (new_provider == NULL || *provider == new_provider) {
 		return;
 	}
 
 	if (*provider != NULL)
 		zia_put_provider(provider,
-		    spa->spa_root_vdev);
+		    spa->spa_root_vdev, zia_props);
 	*provider = new_provider;
 	zia_props->can_offload = !!(*provider);
 
@@ -376,7 +423,7 @@ zia_initialize_provider(const char *strval, nvpair_t *elem,
 #endif
 
 void *
-zia_get_provider(const char *name, vdev_t *vdev)
+zia_get_provider(const char *name, vdev_t *vdev, zia_props_t *zia_props)
 {
 #ifdef ZIA
 	if (!dpusm) {
@@ -397,15 +444,38 @@ zia_get_provider(const char *name, vdev_t *vdev)
 	    name, provider);
 #endif
 
+	// Add provider to providers list in zia_props
+	zia_providers_t *item = kmem_alloc(sizeof(zia_providers_t), KM_SLEEP);
+	item->provider = provider;
+	item->count = 1;
+
+	list_link_init(&item->node);
+	list_insert_head(&zia_props->providers, item);
+
 	/* set up Z.I.A. for existing vdevs */
 	if (vdev) {
-		if (zia_open_vdevs(vdev) != ZIA_OK) {
 #ifdef _KERNEL
-		printk("Z.I.A. failed to open vdev with provider \"%s\" (%p).\n", name, provider);
+		printk("ZIA TEST: Open vdevs");
 #endif
-		return (NULL);
+		if (zia_open_vdevs(vdev, provider) != ZIA_OK) {
+#ifdef _KERNEL
+			printk("Z.I.A. failed to open vdev with provider \"%s\" (%p).\n", name, provider);
+#endif
+			// Deallocate from list that we just added to
+			list_remove(&zia_props->providers, item);
+			kmem_free(item, sizeof(zia_providers_t));
+
+			const int ret = dpusm->put(provider);
+			(void) ret;
+#ifdef _KERNEL
+			printk("Z.I.A. returned provider handle \"%s\" "
+			    "(%p) and got return value %d",
+			    name, provider, ret);
+#endif
+			return (NULL);
 		}
 	}
+
 	return (provider);
 #else
 	(void) name; (void) vdev;
@@ -434,7 +504,7 @@ zia_get_provider_name(void *provider)
 
 #ifdef ZIA
 /* recursively find all leaf vdevs and close them */
-static void zia_close_vdevs(vdev_t *vd) {
+static void zia_close_vdevs(vdev_t *vd, void *provider) {
 	vdev_ops_t *ops = vd->vdev_ops;
 	if (ops->vdev_op_leaf) {
 		const size_t len = strlen(ops->vdev_op_type);
@@ -444,35 +514,54 @@ static void zia_close_vdevs(vdev_t *vd) {
 			}
 #ifdef _KERNEL
 			else if (memcmp(ops->vdev_op_type, "disk", 4) == 0) {
-				zia_disk_close(vd);
+#ifdef _KERNEL
+			printk("ZIA TEST: %s: disk close", __func__);
+#endif
+				zia_disk_close(vd, provider);
 			}
 #endif
 		}
 	} else {
 		for (uint64_t i = 0; i < vd->vdev_children; i++) {
 			vdev_t *child = vd->vdev_child[i];
-			zia_close_vdevs(child);
+			zia_close_vdevs(child, provider);
 		}
 	}
 }
 #endif
 
 int
-zia_put_provider(void **provider, vdev_t *vdev)
+zia_put_provider(void **provider, vdev_t *vdev, zia_props_t *zia_props)
 {
 #ifdef ZIA
 	if (!dpusm || !provider || !*provider) {
 		return (ZIA_FALLBACK);
 	}
 
-	/*
-	 * if the zpool is not going down, but the provider is going away,
-	 * make sure the vdevs don't keep pointing to the invalid provider
-	 */
-	if (vdev) {
-		zia_close_vdevs(vdev);
+	zia_providers_t *item = zia_search_providers(&zia_props->providers, *provider);
+	if (item == NULL) {
+#ifdef _KERNEL
+		printk("ZIA TEST: %s: item not found", __func__);
+#endif
+		return (ZIA_ERROR);
 	}
 
+#ifdef _KERNEL
+	printk("ZIA TEST: %s: closing vdevs", __func__);
+#endif
+	item->count--;
+	if (item->count <= 0) {
+		/*
+		 * if the zpool is not going down, but a provider is going away,
+		 * make sure the vdevs don't keep pointing to the invalid provider
+		 */
+		if (vdev) {
+			zia_close_vdevs(vdev, *provider);
+		}
+
+		list_remove(&zia_props->providers, item);
+		kmem_free(item, sizeof(zia_providers_t));
+	}
 #ifdef _KERNEL
 	const char *name = zia_get_provider_name(*provider);
 #endif
@@ -507,29 +596,29 @@ zia_put_all_providers(zia_props_t *zia_props, vdev_t *vdev)
 	 * zia_props, if they exist
 	 */
 	if(zia_props->provider)
-		zia_put_provider(&zia_props->provider, vdev);
+		zia_put_provider(&zia_props->provider, vdev, zia_props);
 	if(zia_props->compress)
-		zia_put_provider(&zia_props->compress, vdev);
+		zia_put_provider(&zia_props->compress, vdev, zia_props);
 	if(zia_props->decompress)
-		zia_put_provider(&zia_props->decompress, vdev);
+		zia_put_provider(&zia_props->decompress, vdev, zia_props);
 	if(zia_props->checksum)
-		zia_put_provider(&zia_props->checksum, vdev);
+		zia_put_provider(&zia_props->checksum, vdev, zia_props);
 	if(zia_props->raidz.gen[1])
-		zia_put_provider(&zia_props->raidz.gen[1], vdev);
+		zia_put_provider(&zia_props->raidz.gen[1], vdev, zia_props);
 	if(zia_props->raidz.gen[2])
-		zia_put_provider(&zia_props->raidz.gen[2], vdev);
+		zia_put_provider(&zia_props->raidz.gen[2], vdev, zia_props);
 	if(zia_props->raidz.gen[3])
-		zia_put_provider(&zia_props->raidz.gen[3], vdev);
+		zia_put_provider(&zia_props->raidz.gen[3], vdev, zia_props);
 	if(zia_props->raidz.rec[1])
-		zia_put_provider(&zia_props->raidz.rec[1], vdev);
+		zia_put_provider(&zia_props->raidz.rec[1], vdev, zia_props);
 	if(zia_props->raidz.rec[2])
-		zia_put_provider(&zia_props->raidz.rec[2], vdev);
+		zia_put_provider(&zia_props->raidz.rec[2], vdev, zia_props);
 	if(zia_props->raidz.rec[3])
-		zia_put_provider(&zia_props->raidz.rec[3], vdev);
+		zia_put_provider(&zia_props->raidz.rec[3], vdev, zia_props);
 	if(zia_props->file_write)
-		zia_put_provider(&zia_props->file_write, vdev);
+		zia_put_provider(&zia_props->file_write, vdev, zia_props);
 	if(zia_props->disk_write)
-		zia_put_provider(&zia_props->disk_write, vdev);
+		zia_put_provider(&zia_props->disk_write, vdev, zia_props);
 	return (ZIA_OK);
 #else
 	(void) zia_props; (void) vdev;
@@ -1782,24 +1871,57 @@ zia_file_close(vdev_t *vdev)
 #ifdef _KERNEL
 int
 zia_disk_open(vdev_t *vdev, const char *path,
-    struct block_device *bdev)
+    struct block_device *bdev, void *provider)
 {
 #ifdef ZIA
 	if (!vdev || !vdev->vdev_spa) {
 		return (ZIA_ERROR);
 	}
 
-	void *provider = zia_get_props(vdev->vdev_spa)->disk_write;
 	if (!dpusm || !provider) {
 		return (ZIA_FALLBACK);
 	}
 
+	if (provider == NULL) {
+		return (ZIA_OK);
+	}
+
+#ifdef _KERNEL
+	printk("ZIA TEST: get props");
+#endif
+	zia_props_t *props = zia_get_props(vdev->vdev_spa);
+
+#ifdef _KERNEL
+	printk("ZIA TEST: list shenanigans");
+#endif
+	// Try to find provider in list
+	zia_providers_t *item = zia_search_providers(&props->providers, provider);
+	if (item == NULL) {
+#ifdef _KERNEL
+		printk("ZIA TEST: Provider not found in list");
+#endif
+		return (ZIA_ERROR);
+	}
+
+	item->vdev_handle = dpusm->disk.open(provider, path, bdev);
+
+	if (provider == props->disk_write && VDEV_HANDLE(vdev) != item->vdev_handle) {
+		// for the provider currently handling vdev, close disk?
+		VDEV_HANDLE(vdev) = item->vdev_handle;
+	}
+#ifdef _KERNEL
+	printk("ZIA TEST: Returning %p", item->vdev_handle);
+#endif
+	return (item->vdev_handle?ZIA_OK:ZIA_ERROR);
+
+	/*
 	if (!VDEV_HANDLE(vdev)) {
 		VDEV_HANDLE(vdev) = dpusm->disk.open(provider,
 		    path, bdev);
 	}
 
 	return (VDEV_HANDLE(vdev)?ZIA_OK:ZIA_ERROR);
+	*/
 #else
 	(void) vdev; (void) path; (void) bdev;
 	return (ZIA_FALLBACK);
@@ -1897,7 +2019,7 @@ zia_disk_flush(vdev_t *vdev, zio_t *zio)
 }
 
 int
-zia_disk_close(vdev_t *vdev)
+zia_disk_close(vdev_t *vdev, void *provider)
 {
 #ifdef ZIA
 	if (!vdev) {
@@ -1905,16 +2027,35 @@ zia_disk_close(vdev_t *vdev)
 	}
 
 	void *handle = VDEV_HANDLE(vdev);
-	VDEV_HANDLE(vdev) = NULL;
-
-	zia_get_props(vdev->vdev_spa)->min_offload_size = 0;
 
 	if (!dpusm || !handle) {
 		return (ZIA_FALLBACK);
 	}
 
-	/* trust that ZFS handles closing disks once */
-	dpusm->disk.close(handle);
+	if (provider == NULL) {
+		return dpusm->disk.close(handle);
+	}
+
+	zia_props_t *props = zia_get_props(vdev->vdev_spa);
+
+	zia_providers_t *item = zia_search_providers(&props->providers, provider);
+	if (item == NULL) {
+#ifdef _KERNEL
+		printk("ZIA TEST: %s: item not found", __func__);
+#endif
+		return (ZIA_ERROR);
+	}
+
+#ifdef _KERNEL
+	printk("ZIA TEST: %s: closing disk", __func__);
+#endif
+	if (item->count <= 0) {
+		/* trust that ZFS handles closing disks once */
+		//dpusm->disk.close(handle);
+		if (item->vdev_handle == VDEV_HANDLE(vdev)) {
+			VDEV_HANDLE(vdev) = NULL;
+		}
+	}
 
 	return (ZIA_OK);
 #else

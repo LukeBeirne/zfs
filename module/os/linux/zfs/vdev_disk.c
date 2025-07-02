@@ -343,7 +343,7 @@ vdev_disk_open(vdev_t *v, uint64_t *psize, uint64_t *max_psize,
 					reread_part = B_TRUE;
 			}
 
-			zia_disk_close(v);
+			zia_disk_close(v, NULL);
 			vdev_blkdev_put(bdh, smode, zfs_vdev_holder);
 		}
 
@@ -471,7 +471,7 @@ vdev_disk_open(vdev_t *v, uint64_t *psize, uint64_t *max_psize,
 	zia_get_props(v->vdev_spa)->min_offload_size = 2 << *physical_ashift;
 
 	/* open disk; ignore errors - will fall back to ZFS */
-	zia_disk_open(v, v->vdev_path, BDH_BDEV(vd->vd_bdh));
+	zia_disk_open(v, v->vdev_path, BDH_BDEV(vd->vd_bdh), NULL);
 
 	return (0);
 }
@@ -485,7 +485,7 @@ vdev_disk_close(vdev_t *v)
 		return;
 
 	if (vd->vd_bdh != NULL) {
-		zia_disk_close(v);
+		zia_disk_close(v, NULL);
 		vdev_blkdev_put(vd->vd_bdh, spa_mode(v->vdev_spa),
 		    zfs_vdev_holder);
 	}

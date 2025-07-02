@@ -2287,6 +2287,16 @@ spa_unload(spa_t *spa)
 	/* If the providers are not defined, nothing will happen */
 	zia_put_all_providers(zia_get_props(spa), spa->spa_root_vdev);
 
+#ifdef ZIA
+	/* Free ZIA list if allocated */
+	zia_props_t *zia_props = zia_get_props(spa);
+	zia_providers_t *item;
+	while((item = (zia_providers_t *)list_remove_head(&zia_props->providers)) != NULL) {
+		kmem_free(item, sizeof(zia_providers_t));
+	}
+	list_destroy(&zia_props->providers);
+#endif
+
 	spa_config_exit(spa, SCL_ALL, spa);
 }
 
@@ -6790,7 +6800,10 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 
 	spa_import_os(spa);
 
-	zia_get_props(spa)->can_offload = B_FALSE;
+	zia_props_t *zia_props = zia_get_props(spa);
+	zia_props->can_offload = B_FALSE;
+	list_create(&zia_props->providers, sizeof(zia_providers_t),
+	    offsetof(zia_providers_t, node));
 
 	mutex_exit(&spa_namespace_lock);
 
