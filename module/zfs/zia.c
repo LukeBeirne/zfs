@@ -369,7 +369,7 @@ zia_get_provider_name(void *provider)
 
 #ifdef ZIA
 /* recursively find all leaf vdevs and close them */
-static void zia_close_vdevs(vdev_t *vd) {
+/*static void zia_close_vdevs(vdev_t *vd) {
 	vdev_ops_t *ops = vd->vdev_ops;
 	if (ops->vdev_op_leaf) {
 		const size_t len = strlen(ops->vdev_op_type);
@@ -389,7 +389,7 @@ static void zia_close_vdevs(vdev_t *vd) {
 			zia_close_vdevs(child);
 		}
 	}
-}
+}*/
 #endif
 
 int
@@ -405,7 +405,10 @@ zia_put_provider(void **provider, vdev_t *vdev)
 	 * make sure the vdevs don't keep pointing to the invalid provider
 	 */
 	if (vdev) {
-		zia_close_vdevs(vdev);
+		//zia_close_vdevs(vdev);
+		spa_vdev_state_enter(vdev->vdev_spa, SCL_NONE);
+		vdev_close(vdev);
+		(void) spa_vdev_state_exit(vdev->vdev_spa, NULL, 0);
 	}
 
 #ifdef _KERNEL

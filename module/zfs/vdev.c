@@ -2723,6 +2723,12 @@ vdev_close(vdev_t *vd)
 	spa_t *spa __maybe_unused = vd->vdev_spa;
 
 	ASSERT(vd != NULL);
+#ifdef _KERNEL
+	printk("%s, %s, %d: open_thread = %p, curthread = %p, spa_config_held = %d, spa_hex = %d", __FILE__, __FUNCTION__, __LINE__,
+	    vd->vdev_open_thread, curthread, spa_config_held(spa, SCL_STATE_ALL, RW_WRITER) == SCL_STATE_ALL,
+	    spa_config_held(spa, SCL_STATE_ALL, RW_WRITER));
+	spl_dumpstack();
+#endif
 	ASSERT(vd->vdev_open_thread == curthread ||
 	    spa_config_held(spa, SCL_STATE_ALL, RW_WRITER) == SCL_STATE_ALL);
 

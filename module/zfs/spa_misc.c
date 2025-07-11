@@ -517,10 +517,18 @@ spa_config_enter_impl(spa_t *spa, int locks, const void *tag, krw_t rw,
 
 	ASSERT3U(SCL_LOCKS, <, sizeof (wlocks_held) * NBBY);
 
+#ifdef _KERNEL
+	printk("%s, %s, %d: locks = %d", __FILE__, __FUNCTION__, __LINE__, locks);
+	spl_dumpstack();
+#endif
 	for (int i = 0; i < SCL_LOCKS; i++) {
 		spa_config_lock_t *scl = &spa->spa_config_lock[i];
-		if (scl->scl_writer == curthread)
+		if (scl->scl_writer == curthread) {
 			wlocks_held |= (1 << i);
+#ifdef _KERNEL
+			printk("%s, %s, %d: wlocks_held = %d", __FILE__, __FUNCTION__, __LINE__, wlocks_held);
+#endif
+		}
 		if (!(locks & (1 << i)))
 			continue;
 		mutex_enter(&scl->scl_lock);
@@ -530,6 +538,9 @@ spa_config_enter_impl(spa_t *spa, int locks, const void *tag, krw_t rw,
 				cv_wait(&scl->scl_cv, &scl->scl_lock);
 			}
 		} else {
+#ifdef _KERNEL
+			printk("%s, %s, %d: scl_writer = %p, curthread = %p", __FILE__, __FUNCTION__, __LINE__, scl->scl_writer, curthread);
+#endif
 			ASSERT(scl->scl_writer != curthread);
 			while (scl->scl_count != 0) {
 				scl->scl_write_wanted++;
@@ -1395,6 +1406,10 @@ spa_vdev_state_enter(spa_t *spa, int oplocks)
 	 * any I/O when we are doing the actual open.
 	 */
 	if (spa_is_root(spa)) {
+#ifdef _KERNEL
+	printk("%s, %s, %d: HERE", __FILE__, __FUNCTION__, __LINE__);
+	spl_dumpstack();
+#endif
 		int low = locks & ~(SCL_ZIO - 1);
 		int high = locks & ~low;
 
