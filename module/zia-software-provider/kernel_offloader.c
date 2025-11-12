@@ -361,10 +361,26 @@ kernel_offloader_alloc_ref(void *src_handle, size_t offset, size_t size)
 	    offset, size));
 }
 
+void *
+kernel_offloader_ptr(void *handle)
+{
+	koh_t *koh = (koh_t *)unswizzle(handle);
+	return (koh->ptr);
+}
+
 int
 kernel_offloader_free(void *handle)
 {
 	koh_free(unswizzle(handle));
+	return (DPUSM_OK);
+}
+
+int
+kernel_offloader_print_handle(void *handle, const char *id)
+{
+	koh_t *koh = (koh_t *)unswizzle(handle);
+	printk("%s: koh->ptr = %p, koh->type = %d, koh->size = %ld",
+	    id, koh->ptr, koh->type, koh->size);
 	return (DPUSM_OK);
 }
 
@@ -497,8 +513,14 @@ kernel_offloader_cmp(void *lhs_handle, void *rhs_handle, int *diff)
 }
 
 int
-kernel_offloader_zero_fill(void *handle, size_t offset, size_t size)
+kernel_offloader_zero_fill(void *handle, size_t offset, size_t size,
+    void *results)
 {
+	/* See note in kernel_offloader.h for async results handling */
+	if (results) {
+		return (((ko_results_t *)results)->status);
+	}
+
 	koh_t *koh = (koh_t *)unswizzle(handle);
 	memset(ptr_start(koh, offset), 0, size);
 	return (KERNEL_OFFLOADER_OK);
@@ -575,10 +597,25 @@ kernel_offloader_mem_stats(
 /* specific implementation */
 static int
 kernel_offloader_gzip_compress(koh_t *src, size_t s_len,
-    koh_t *dst, size_t *d_len, int level)
+    koh_t *dst, size_t *d_len, int level, ko_results_t *results)
 {
-	if (z_compress_level(ptr_start(dst, 0), d_len,
-	    ptr_start(src, 0), s_len, level) != Z_OK) {
+	/* See note in kernel_offloader.h for async results handling */
+	if (results) {
+		if (results->status == DPUSM_OK) {
+			koh_t *comp_dst = unswizzle((koh_t *)results->comp_dst);
+			void *save = dst->ptr;
+			dst->ptr = comp_dst->ptr;
+			comp_dst->ptr = save;
+
+			*d_len = results->comp_size;
+		}
+		return (results->status);
+	}
+
+	int ret = z_compress_level(ptr_start(dst, 0), d_len,
+	    ptr_start(src, 0), s_len, level);
+
+	if (ret != Z_OK) {
 		if (*d_len != src->size) {
 			return (KERNEL_OFFLOADER_ERROR);
 		}
@@ -590,21 +627,36 @@ kernel_offloader_gzip_compress(koh_t *src, size_t s_len,
 
 static int
 kernel_offloader_lz4_compress(koh_t *src, koh_t *dst,
-    size_t s_len, int level, size_t *c_len)
+    size_t s_len, int level, size_t *c_len, ko_results_t *results)
 {
+	/* See note in kernel_offloader.h for async results handling */
+	if (results) {
+		if (results->status == DPUSM_OK) {
+			koh_t *comp_dst = (koh_t *)unswizzle(results->comp_dst);
+			void *save = dst->ptr;
+			dst->ptr = comp_dst->ptr;
+			comp_dst->ptr = save;
+
+			*c_len = results->comp_size;
+		}
+		return (results->status);
+	}
+
 	*c_len = dst->size;
 
-	if (zfs_lz4_compress_buf(ptr_start(src, 0), ptr_start(dst, 0),
-	    s_len, *c_len, level) == s_len) {
+	size_t d_len = zfs_lz4_compress_buf(ptr_start(src, 0),
+	    ptr_start(dst, 0), s_len, *c_len, level);
+	if (d_len == s_len) {
 		return (KERNEL_OFFLOADER_ERROR);
 	}
 
+	*c_len = d_len;
 	return (KERNEL_OFFLOADER_OK);
 }
 
 int
 kernel_offloader_compress(dpusm_compress_t alg, int level,
-    void *src, size_t s_len, void *dst, void *d_len)
+    void *src, size_t s_len, void *dst, void *d_len, void *job_id)
 {
 	int status = KERNEL_OFFLOADER_UNAVAILABLE;
 	koh_t *src_koh   = NULL;
@@ -623,10 +675,10 @@ kernel_offloader_compress(dpusm_compress_t alg, int level,
 	if ((DPUSM_COMPRESS_GZIP_1 <= alg) &&
 	    (alg <= DPUSM_COMPRESS_GZIP_9)) {
 		status = kernel_offloader_gzip_compress(src_koh, s_len,
-		    dst_koh, (size_t *)ptr_start(d_len_koh, 0), level);
+		    dst_koh, (size_t *)ptr_start(d_len_koh, 0), level, job_id);
 	} else if (alg == DPUSM_COMPRESS_LZ4) {
 		status = kernel_offloader_lz4_compress(src_koh, dst_koh, s_len,
-		    level, (size_t *)ptr_start(d_len_koh, 0));
+		    level, (size_t *)ptr_start(d_len_koh, 0), job_id);
 	}
 
 	return (status);
@@ -692,8 +744,21 @@ kernel_offloader_decompress(dpusm_decompress_t alg, void *level,
 int
 kernel_offloader_checksum(dpusm_checksum_t alg,
     dpusm_checksum_byteorder_t order, void *data, size_t size,
-    void *cksum, size_t cksum_size)
+    void *cksum, size_t cksum_size, void *job_id)
 {
+	/* See note in kernel_offloader.h for async results handling */
+	if (job_id) {
+		ko_results_t *results = (ko_results_t *)job_id;
+
+		if (results->status == DPUSM_OK) {
+			zio_cksum_t zcp;
+			koh_t *cksum_dst = unswizzle(
+			    (koh_t *)results->cksum_dst);
+			memcpy(cksum, cksum_dst->ptr, sizeof (zcp.zc_word));
+		}
+		return (results->status);
+	}
+
 	koh_t *data_koh = (koh_t *)unswizzle(data);
 	if (!data_koh) {
 		return (KERNEL_OFFLOADER_ERROR);

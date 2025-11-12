@@ -107,10 +107,17 @@ typedef struct zia_props {
 
 	int file_write;
 	int disk_write;
+
+	int async;
+	void *job_id;
 } zia_props_t;
 
 zia_props_t *zia_get_props(spa_t *spa);
 void zia_prop_warn(boolean_t val, const char *name);
+
+void *zia_get_jobs(zia_props_t *props, zio_t *zio);
+void *zia_async_init(void *jobs);
+int zia_async_fini(zio_t *zio);
 
 int zia_init(void);
 int zia_fini(void);
@@ -162,17 +169,20 @@ int zia_free_abd(abd_t *abd, boolean_t lock);
 int zia_cleanup_abd(abd_t *abd, size_t size,
     boolean_t local_offload, boolean_t lock);
 
+void zia_print_handle(abd_t *abd, const char *id);
+
 /* if the accelerator failed, restart the zio */
 void zia_restart_before_vdev(zio_t *zio);
 
 /* fill a buffer with zeros */
-int zia_zero_fill(abd_t *abd, size_t offset, size_t size);
+int zia_zero_fill(abd_t *abd, size_t offset, size_t size, void *async_id);
 
 int
 zia_compress(zia_props_t *props, enum zio_compress c,
     abd_t *src, size_t s_len,
     abd_t **dst, uint64_t *d_len,
-    uint8_t level, boolean_t *local_offload);
+    uint8_t level, boolean_t *local_offload,
+    void *async_id);
 
 int
 zia_decompress(zia_props_t *props, enum zio_compress c,
@@ -181,7 +191,7 @@ zia_decompress(zia_props_t *props, enum zio_compress c,
 
 int zia_checksum_compute(void *provider, zio_cksum_t *dst,
     enum zio_checksum alg, zio_t *zio, uint64_t size,
-    boolean_t *local_offload);
+    boolean_t *local_offload, void *async_id);
 int zia_checksum_error(enum zio_checksum alg, abd_t *abd,
     uint64_t size, int byteswap, zio_cksum_t *actual_cksum);
 

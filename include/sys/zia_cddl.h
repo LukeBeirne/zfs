@@ -23,7 +23,7 @@ int
 zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
     enum zio_compress c, abd_t *src, size_t s_len,
     abd_t **dst, void **cbuf_handle, uint64_t *c_len,
-    uint8_t level, boolean_t *local_offload);
+    uint8_t level, boolean_t *local_offload, void *async_id);
 
 int
 zia_raidz_rec_impl(const dpusm_uf_t *dpusm,
