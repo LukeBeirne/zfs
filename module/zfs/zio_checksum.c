@@ -417,13 +417,18 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		if ((zia_props->checksum == 1) &&
 		    (zio->io_can_offload == B_TRUE)) {
 			zia_rc = zia_checksum_compute(zia_props->provider,
-			    &cksum, checksum, zio, size, &local_offload);
+			    &cksum, checksum, zio, size, &local_offload,
+			    zio->io_async_id);
 		}
 
 		/* fall back to ZFS implementation */
 		if (zia_rc != ZIA_OK) {
-			zia_rc = zia_cleanup_abd(abd, size, local_offload,
-			    B_FALSE);
+			if (zio->io_async_id) {
+				zia_rc = zia_async_fini(zio);
+			} else {
+				zia_rc = zia_cleanup_abd(abd, size,
+				    local_offload, B_FALSE);
+			}
 			if (zia_rc == ZIA_ACCELERATOR_DOWN) {
 				zia_restart_before_vdev(zio);
 				return;
@@ -433,6 +438,9 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 			    &cksum);
 		} else {
 			zio->io_flags |= ZIO_FLAG_DONT_AGGREGATE;
+			if (zio->io_async_id) {
+				zia_rc = zia_async_fini(zio);
+			}
 		}
 		if (BP_USES_CRYPT(bp) && BP_GET_TYPE(bp) != DMU_OT_OBJSET)
 			zio_checksum_handle_crypt(&cksum, &saved, insecure);

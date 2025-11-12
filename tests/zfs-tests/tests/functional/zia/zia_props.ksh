@@ -42,5 +42,6 @@ log_must zpool get zia_raidz2_rec "${TESTPOOL}"
 log_must zpool get zia_raidz3_rec "${TESTPOOL}"
 log_must zpool get zia_disk_write "${TESTPOOL}"
 log_must zpool get zia_file_write "${TESTPOOL}"
+log_must zpool get zia_async      "${TESTPOOL}"
 
 log_pass

@@ -77,6 +77,20 @@
  * ZFS or Z.I.A., the handle pointer is masked with a random value
  * generated at load-time. Other offloaders may choose to present
  * non-void handles.
+ *
+ * -------------------------------------------------------------------
+ *
+ * Any function with a async_id or job_id input parameter is for the
+ * asynchronous functionality of DPUSM. This ID represents a job
+ * that is running on the provider that could have multiple operations
+ * running in succession without ZFS needing to instantiate them
+ * individually. If no such job has been started for this, the
+ * parameter will simply be NULL.
+ * For return, kernel_offloader stores results from asynchronous
+ * operations in a results struct (ko_results_t). This was designed
+ * in DPUSM to be as general as possible, meaning other providers
+ * can store and provide these results however they like, so long
+ * as the results are given when requested.
  */
 
 /* return values */
@@ -94,6 +108,13 @@
 /* "hardware" went down for some reason (overheated, unplugged, etc.) */
 #define	KERNEL_OFFLOADER_DOWN 4
 
+typedef struct kernel_offloader_results {
+	int status;
+	void *comp_dst;
+	size_t comp_size;
+	void *cksum_dst;
+} ko_results_t;
+
 /*
  * init function - this should be the kernel module init, but
  * kernel offloader is not compiled as a separate kernel module
@@ -105,7 +126,9 @@ void kernel_offloader_fini(void);
 void *kernel_offloader_alloc(size_t size);
 void *kernel_offloader_alloc_ref(void *src, size_t offset, size_t size);
 int kernel_offloader_get_size(void *handle, size_t *size, size_t *actual);
+void *kernel_offloader_ptr(void *handle);
 int kernel_offloader_free(void *handle);
+int kernel_offloader_print_handle(void *handle, const char *id);
 int kernel_offloader_associate_handle(void *handle, void *ptr);
 int kernel_offloader_copy_from_generic(void *handle, size_t offset,
     const void *src, size_t size);
@@ -121,20 +144,21 @@ int kernel_offloader_mem_stats(
     void *t_count_handle, void *t_size_handle, void *t_actual_handle,
     void *a_count_handle, void *a_size_handle, void *a_actual_handle);
 int kernel_offloader_cmp(void *lhs_handle, void *rhs_handle, int *diff);
-int kernel_offloader_zero_fill(void *handle, size_t offset, size_t size);
+int kernel_offloader_zero_fill(void *handle, size_t offset,
+    size_t size, void *job_id);
 int kernel_offloader_all_zeros(void *handle, size_t offset, size_t size);
 
 /* ZIO Pipeline Stages */
 
 int kernel_offloader_compress(dpusm_compress_t alg, int level,
-    void *src, size_t s_len, void *dst, void *d_len);
+    void *src, size_t s_len, void *dst, void *d_len, void *job_id);
 
 int kernel_offloader_decompress(dpusm_compress_t alg, void *level,
     void *src, size_t s_len, void *dst, void *d_len);
 
 int kernel_offloader_checksum(dpusm_checksum_t alg,
     dpusm_checksum_byteorder_t order, void *data, size_t size,
-    void *cksum, size_t cksum_size);
+    void *cksum, size_t cksum_size, void *job_id);
 
 void *kernel_offloader_raidz_alloc(size_t nparity, size_t ndata);
 int kernel_offloader_raidz_set_column(void *raidz, uint64_t c,
@@ -159,5 +183,7 @@ int kernel_offloader_disk_write(void *disk_handle, void *handle,
 int kernel_offloader_disk_flush(void *disk_handle,
     dpusm_disk_flush_completion_t flush_completion, void *fc_args);
 void kernel_offloader_disk_close(void *disk_handle);
+void *kernel_offloader_async_init(dpusm_jobs_t *jobs);
+int kernel_offloader_async_fini(void *job_id);
 
 #endif

@@ -294,9 +294,10 @@ sw_provider_mem_stats(size_t *t_count, size_t *t_size, size_t *t_actual,
 }
 
 static int
-sw_provider_zero_fill(void *handle, size_t offset, size_t size)
+sw_provider_zero_fill(void *handle, size_t offset, size_t size, void *job_id)
 {
-	return (translate_rc(kernel_offloader_zero_fill(handle, offset, size)));
+	return (translate_rc(kernel_offloader_zero_fill(handle,
+	    offset, size, job_id)));
 }
 
 static int
@@ -307,7 +308,7 @@ sw_provider_all_zeros(void *handle, size_t offset, size_t size)
 
 static int
 sw_provider_compress(dpusm_compress_t alg, int level,
-    void *src, size_t s_len, void *dst, size_t *d_len)
+    void *src, size_t s_len, void *dst, size_t *d_len, void *job_id)
 {
 	/* buffer that offloader fills out */
 	void *d_len_handle = kernel_offloader_alloc(sizeof (size_t));
@@ -317,7 +318,7 @@ sw_provider_compress(dpusm_compress_t alg, int level,
 	    d_len, sizeof (*d_len));
 
 	const int kz_rc = kernel_offloader_compress(alg, level,
-	    src, s_len, dst, d_len_handle);
+	    src, s_len, dst, d_len_handle, job_id);
 	if (kz_rc == KERNEL_OFFLOADER_OK) {
 		/* get updated d_len back from offloader */
 		kernel_offloader_copy_to_generic(d_len_handle, 0,
@@ -360,13 +361,13 @@ sw_provider_decompress(dpusm_compress_t alg, int *level,
 static int
 sw_provider_checksum(dpusm_checksum_t alg,
     dpusm_checksum_byteorder_t order, void *data, size_t size,
-    void *cksum, size_t cksum_size)
+    void *cksum, size_t cksum_size, void *job_id)
 {
 	/* maybe translate alg and order */
 
 	/* trigger offloader to do actual calculation */
 	return (translate_rc(kernel_offloader_checksum(alg,
-	    order, data, size, cksum, cksum_size)));
+	    order, data, size, cksum, cksum_size, job_id)));
 }
 
 static int
@@ -409,6 +410,95 @@ sw_provider_file_write(void *fp_handle, void *handle, size_t count,
 	    handle, count, trailing_zeros, offset, ashift, resid, err)));
 }
 
+static void *
+sw_provider_async_init(dpusm_jobs_t *jobs) {
+	int count = 0;
+
+	void *src = jobs->src;
+	size_t src_len = jobs->src_len;
+
+	ko_results_t *results = kzalloc(sizeof (ko_results_t), GFP_KERNEL);
+	results->status = DPUSM_OK;
+
+	dpusm_ops_t j;
+	while (count < jobs->job_count) {
+		j = jobs->jobs[count];
+		switch (j) {
+			case DPUSM_COMPRESS: {
+				void *comp_dst =
+				    kernel_offloader_alloc(src_len);
+				size_t dst_len = src_len;
+
+				results->status = sw_provider_compress(
+				    jobs->comp_alg, jobs->comp_level,
+				    src, src_len, comp_dst, &dst_len, NULL);
+
+				results->comp_dst = comp_dst;
+				results->comp_size = dst_len;
+				src = comp_dst;
+				src_len = dst_len;
+				break;
+			}
+			case DPUSM_ZERO_FILL: {
+				uint64_t rounded = jobs->zf_min_size;
+				if (src_len > jobs->zf_min_size)
+					rounded = roundup(src_len,
+					    jobs->zf_gcd);
+
+				if (rounded >= jobs->src_len) {
+					results->status = DPUSM_ERROR;
+					break;
+				}
+
+				results->status = sw_provider_zero_fill(src,
+				    src_len, rounded - src_len, NULL);
+
+				src_len = rounded;
+				break;
+			}
+			case DPUSM_CHECKSUM: {
+				void *cksum_dst =
+				    kernel_offloader_alloc(jobs->cksum_size);
+				void *cksum_ptr =
+				    kernel_offloader_ptr(cksum_dst);
+
+				results->status = sw_provider_checksum(
+				    jobs->cksum_alg, jobs->cksum_order,
+				    src, src_len, cksum_ptr, jobs->cksum_size,
+				    NULL);
+
+				results->cksum_dst = cksum_dst;
+				break;
+			}
+			default:
+				results->status = DPUSM_ERROR;
+				break;
+		}
+
+		if (results->status != DPUSM_OK) {
+			return (results);
+		}
+		count++;
+	}
+
+	return (results);
+}
+
+static int
+sw_provider_async_fini(void *job_id) {
+	ko_results_t *results = (ko_results_t *)job_id;
+
+	if (results->comp_dst) {
+		kernel_offloader_free(results->comp_dst);
+	}
+	if (results->cksum_dst) {
+		kernel_offloader_free(results->cksum_dst);
+	}
+
+	kfree(results);
+	return (DPUSM_OK);
+}
+
 /* BEGIN CSTYLED */
 static const dpusm_pf_t sw_provider_functions = {
 	.algorithms           = sw_provider_algorithms,
@@ -416,6 +506,7 @@ static const dpusm_pf_t sw_provider_functions = {
 	.alloc_ref            = kernel_offloader_alloc_ref,
 	.get_size             = sw_provider_get_size,
 	.free                 = kernel_offloader_free,
+	.print_handle         = kernel_offloader_print_handle,
 	.associate_handle     = sw_provider_associate_handle,
 	.copy                 = {
 	                            .from = {
@@ -456,6 +547,8 @@ static const dpusm_pf_t sw_provider_functions = {
 	                            .flush       = kernel_offloader_disk_flush,
 	                            .close       = kernel_offloader_disk_close,
 	                        },
+	.async_init           = sw_provider_async_init,
+	.async_fini           = sw_provider_async_fini,
 };
 /* END CSTYLED */
 

@@ -1402,7 +1402,6 @@ zio_write(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp,
 	    ZIO_DIRECT_WRITE_PIPELINE : (flags & ZIO_FLAG_DDT_CHILD) ?
 	    ZIO_DDT_CHILD_WRITE_PIPELINE : ZIO_WRITE_PIPELINE;
 
-
 	zio = zio_create(pio, spa, txg, bp, data, lsize, psize, done, private,
 	    ZIO_TYPE_WRITE, priority, flags, NULL, 0, zb,
 	    ZIO_STAGE_OPEN, pipeline);
@@ -1422,6 +1421,14 @@ zio_write(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp,
 	if (data == NULL &&
 	    (zio->io_prop.zp_dedup_verify || zio->io_prop.zp_encrypt)) {
 		zio->io_prop.zp_dedup = zio->io_prop.zp_dedup_verify = B_FALSE;
+	}
+
+	zio->io_async_id = NULL;
+	zia_props_t *props = zia_get_props(spa);
+
+	if (props->async && !BP_IS_METADATA(zio->io_bp)) {
+		zio->io_job = zia_get_jobs(props, zio);
+		zio->io_async_id = zia_async_init(zio->io_job);
 	}
 
 	return (zio);
@@ -2032,25 +2039,29 @@ zio_write_compress(zio_t *zio)
 		boolean_t local_offload = B_FALSE;
 
 		abd_t *cabd = NULL;
+		zia_props_t *zia_props = zia_get_props(spa);
 		if (abd_cmp_zero(zio->io_abd, lsize) == 0) {
 			psize = 0;
 		} else if (compress == ZIO_COMPRESS_EMPTY) {
 			psize = lsize;
 		} else {
 			int zia_rc = ZIA_FALLBACK;
-			zia_props_t *zia_props = zia_get_props(spa);
 			if ((zia_props->compress == 1) &&
 			    (zio->io_can_offload == B_TRUE)) {
 				zia_rc = zia_compress(zia_props, compress,
 				    zio->io_abd, lsize, &cabd, &psize,
-				    zp->zp_complevel, &local_offload);
+				    zp->zp_complevel, &local_offload,
+				    zio->io_async_id);
 			}
 
 			if (zia_rc != ZIA_OK) {
 				ASSERT(zia_is_offloaded(cabd) == B_FALSE);
-
 				zia_rc = zia_cleanup_abd(zio->io_abd,
 				    lsize, local_offload, B_FALSE);
+
+				if (zio->io_async_id) {
+					zia_async_fini(zio);
+				}
 
 				/*
 				 * if data has to be brought back for cpu
@@ -2081,6 +2092,15 @@ zio_write_compress(zio_t *zio)
 			compress = ZIO_COMPRESS_OFF;
 			if (cabd != NULL) {
 				abd_free(cabd);
+			}
+
+			/*
+			 * Asynchronous job must halt now that
+			 * compression wasn't done.
+			 */
+			if (zio->io_async_id &&
+			    zia_props->compress == 1) {
+				zia_async_fini(zio);
 			}
 			/* source abd is still offloaded */
 		} else if (psize <= BPE_PAYLOAD_SIZE && !zp->zp_encrypt &&
@@ -2149,10 +2169,12 @@ zio_write_compress(zio_t *zio)
 				    local_offload, B_FALSE);
 				psize = lsize;
 			} else {
-				if (zia_is_offloaded(cabd)) {
+				if (zia_is_offloaded(cabd) ||
+				    zio->io_async_id) {
 					/* zero tail on offloader */
 					if (zia_zero_fill(cabd,
-					    psize, rounded - psize) == ZIA_OK) {
+					    psize, rounded - psize,
+					    zio->io_async_id) == ZIA_OK) {
 						/*
 						 * don't aggregate
 						 * offloaded data
@@ -5770,6 +5792,11 @@ zio_done(zio_t *zio)
 		return (NULL);
 	}
 
+	// ZIA TEST: async_fini 1
+	if (zio->io_async_id) {
+		zia_async_fini(zio);
+	}
+
 	/*
 	 * If the allocation throttle is enabled, then update the accounting.
 	 * We only track child I/Os that are part of an allocating async
@@ -5884,6 +5911,9 @@ zio_done(zio_t *zio)
 	}
 
 	if (zio->io_error) {
+#ifdef _KERNEL
+		printk("ZIA TEST: zio done, io error = %d, io type = %d", zio->io_error, zio->io_type);
+#endif
 		ASSERT(!(zio->io_flags & ZIO_FLAG_ZIA_REEXECUTE));
 
 		/*

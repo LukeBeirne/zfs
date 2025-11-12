@@ -562,6 +562,8 @@ struct zio {
 	taskq_ent_t	io_tqent;
 
 	boolean_t io_can_offload;
+	void *io_job;
+	void *io_async_id;
 };
 
 enum blk_verify_flag {

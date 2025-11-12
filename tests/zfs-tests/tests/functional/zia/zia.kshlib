@@ -82,6 +82,7 @@ function offload_all
     log_must zpool set zia_raidz3_rec="on" "${TESTPOOL}"
     log_must zpool set zia_disk_write="on" "${TESTPOOL}"
     log_must zpool set zia_file_write="on" "${TESTPOOL}"
+    log_must zpool set zia_async="on" "${TESTPOOL}"
 }
 
 #
@@ -109,11 +110,16 @@ function loop_offloads_and_write
                     log_must zpool set zia_disk_write="${diskfile}" "${TESTPOOL}"
                     log_must zpool set zia_file_write="${diskfile}" "${TESTPOOL}"
 
-                    log_must file_write -o create -f "${FILENAME}" -b "${BLOCKSZ}" -c "${NUM_WRITES}" -d "${DATA}"
-                    log_must ls -l "${FILENAME}"
-                    log_must verify_pool "${TESTPOOL}"
-                    log_must check_pool_status "${TESTPOOL}" "errors" "No known data errors"
-                    log_must rm "${FILENAME}"
+                    for async in on off
+                    do
+                        log_must zpool set zia_async="${async}" "${TESTPOOL}"
+
+                        log_must file_write -o create -f "${FILENAME}" -b "${BLOCKSZ}" -c "${NUM_WRITES}" -d "${DATA}"
+                        log_must ls -l "${FILENAME}"
+                        log_must verify_pool "${TESTPOOL}"
+                        log_must check_pool_status "${TESTPOOL}" "errors" "No known data errors"
+                        log_must rm "${FILENAME}"
+                    done
                 done
             done
         done

@@ -653,6 +653,9 @@ spa_prop_get_config(spa_t *spa, nvlist_t *nv)
 
 	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_DISK_WRITE,
 	    NULL, zia_props->disk_write, ZPROP_SRC_LOCAL);
+
+	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_ASYNC,
+	    NULL, zia_props->async, ZPROP_SRC_LOCAL);
 }
 
 /*
@@ -1015,6 +1018,7 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 		case ZPOOL_PROP_ZIA_RAIDZ3_REC:
 		case ZPOOL_PROP_ZIA_FILE_WRITE:
 		case ZPOOL_PROP_ZIA_DISK_WRITE:
+		case ZPOOL_PROP_ZIA_ASYNC:
 			break;
 
 		default:
@@ -10863,6 +10867,12 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 
 			zia_prop_warn(zia_props->disk_write,
 			    "Disk Write");
+			break;
+		case ZPOOL_PROP_ZIA_ASYNC:
+			zia_props->async =
+			    fnvpair_value_uint64(elem);
+			// ZIA TEST: Remove for final push
+			zia_prop_warn(zia_props->async, "Async");
 			break;
 		case ZPOOL_PROP_INVAL:
 			if (zpool_prop_feature(elemname)) {

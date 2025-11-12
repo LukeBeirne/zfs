@@ -87,6 +87,46 @@ zia_prop_warn(boolean_t val, const char *name)
 #endif
 }
 
+#ifdef ZIA
+void *
+zia_async_init(void *jobs)
+{
+	if (!jobs) {
+		return (NULL);
+	}
+	return (dpusm->async_init((dpusm_jobs_t *)jobs));
+}
+#endif
+
+#ifdef ZIA
+int
+zia_async_fini(zio_t *zio)
+{
+	int ret = ZIA_OK;
+	int max_jobs = 3;
+
+	if (zia_is_offloaded(zio->io_abd)) {
+		ret = zia_onload_abd(zio->io_abd, zio->io_size, B_FALSE);
+	}
+
+	dpusm_jobs_t *job_struct = zio->io_job;
+	void *async_id = zio->io_async_id;
+
+	if (job_struct) {
+		kmem_free((job_struct)->jobs, max_jobs*sizeof (char));
+		kmem_free((job_struct), sizeof (dpusm_jobs_t));
+	}
+
+	if (async_id) {
+		ret = dpusm_to_ret(dpusm->async_fini(async_id));
+	}
+
+	zio->io_async_id = NULL;
+
+	return (ret);
+}
+#endif
+
 int
 dpusm_to_ret(const int dpusm_ret)
 {
@@ -234,6 +274,149 @@ zia_get_capabilities(void *provider, dpusm_pc_t **caps)
 	return (dpusm_to_ret(dpusm->capabilities(provider, caps)));
 }
 #endif
+
+/*
+ * The purpose of zia_get_jobs() is to package information
+ * regarding the current write-out as needed for the
+ * provider to perform data operations at the very beginning,
+ * without needing to wait for ZFS to get there itself
+ * and provide that information then.
+ * Since the purpose of this is to avoid having to copy
+ * data back and forth from the provider, async is only
+ * useful if multiple operations can be performed by
+ * the provider in a row. For each data op, depending on
+ * if it is enabled in both the zpool (ZIO) and ZIA, it
+ * either skips the op (continues), stops and returns the
+ * current set of ops as it can no longer continue, or marks
+ * the op for async and continues.
+ * Refer to the table below for when each outcome occurs:
+ *   ZIO   |   ZIA   |   RESULT
+ *   off   |   off   |  continue
+ *   off   |   on    |  continue
+ *   on    |   off   |  stop
+ *   on    |   on    |  async op and continue
+ *
+ *  If an error occurs AT ANY POINT of the async, the
+ *  result will be thrown out. Even if the provider
+ *  successfully compressed and zero-filled, if an
+ *  error occurs at checksum, then ZIA will fallback
+ *  once ZFS gets to compression.
+ */
+void *
+zia_get_jobs(zia_props_t *props, zio_t *zio)
+{
+#ifdef ZIA
+	if (!zia_is_used(zio))
+		return (NULL);
+
+	int max_jobs = 3;
+
+	dpusm_jobs_t *job_struct;
+	dpusm_ops_t *jobs;
+
+	job_struct = kmem_zalloc(sizeof (dpusm_jobs_t), KM_SLEEP);
+	jobs = kmem_zalloc(max_jobs*sizeof (dpusm_ops_t), KM_SLEEP);
+
+	job_struct->jobs = jobs;
+	job_struct->job_count = 0;
+
+	int ret = zia_offload_abd(props->provider, zio->io_abd,
+	    zio->io_size, NULL, B_FALSE);
+	if (ret != ZIA_OK) {
+		goto job_end;
+	}
+
+	/* COMPRESSION */
+	if (zio->io_prop.zp_compress != ZIO_COMPRESS_OFF && !props->compress) {
+		goto job_end;
+	}
+
+	if (zio->io_prop.zp_compress != ZIO_COMPRESS_OFF && props->compress) {
+		dpusm_pc_t *caps = NULL;
+		ret = zia_get_capabilities(props->provider, &caps);
+		if (ret != ZIA_OK) {
+			goto job_end;
+		}
+
+		enum zio_compress c = (zio->io_prop).zp_compress;
+		if (!(caps->compress & compress_to_dpusm(c))) {
+			goto job_end;
+		}
+
+		/* check in-memory buffer for zeros */
+		if (abd_cmp_zero(zio->io_abd, zio->io_lsize) == 0) {
+			goto job_end;
+		}
+		if (c == ZIO_COMPRESS_EMPTY) {
+			goto job_end;
+		}
+
+		job_struct->src = ABD_HANDLE(zio->io_abd);
+		job_struct->src_len = zio->io_lsize;
+
+		/* compress */
+		jobs[job_struct->job_count] = DPUSM_COMPRESS;
+		job_struct->job_count++;
+
+		job_struct->comp_alg = compress_to_dpusm(c);
+		job_struct->comp_level = (int8_t)zio->io_prop.zp_complevel;
+
+		/* zero fill */
+		jobs[job_struct->job_count] = DPUSM_ZERO_FILL;
+		job_struct->job_count++;
+
+		job_struct->zf_size = zio->io_size;
+		job_struct->zf_min_size = zio->io_spa->spa_min_alloc;
+		job_struct->zf_gcd = zio->io_spa->spa_gcd_alloc;
+	}
+
+	/* CHECKSUM */
+	if (zio->io_prop.zp_checksum != ZIO_CHECKSUM_OFF && !props->checksum) {
+		goto job_end;
+	}
+
+	if (zio->io_prop.zp_checksum != ZIO_CHECKSUM_OFF && props->checksum) {
+		enum zio_checksum alg = zio->io_prop.zp_checksum;
+		const dpusm_checksum_byteorder_t byteorder =
+		    byteorder_to_dpusm(0);
+		//job_struct->cksum_order = byteorder_to_dpusm(
+		//    BP_SHOULD_BYTESWAP(zio->io_bp));
+		//job_struct->cksum_order = ZFS_HOST_BYTEORDER;
+		//job_struct->cksum_order = 1;
+		dpusm_pc_t *caps = NULL;
+		if ((zia_get_capabilities(props->provider, &caps) != ZIA_OK) ||
+		    !(caps->checksum & checksum_to_dpusm(alg)) ||
+		    !(caps->checksum_byteorder & byteorder)) {
+			goto job_end;
+		}
+
+		jobs[job_struct->job_count] = DPUSM_CHECKSUM;
+		job_struct->job_count++;
+
+#ifdef _KERNEL
+		//printk("ZIA TEST: get jobs: byteswap = %d, host_byteorder = %lld, btd_host_byteorder = %d, btd_0 = %d", BP_SHOULD_BYTESWAP(zio->io_bp), ZFS_HOST_BYTEORDER, byteorder_to_dpusm(ZFS_HOST_BYTEORDER), byteorder_to_dpusm(0));
+#endif
+
+		job_struct->cksum_alg = checksum_to_dpusm(
+		    alg);
+		job_struct->cksum_order = byteorder;
+		zio_cksum_t cksum;
+		job_struct->cksum_size = sizeof (cksum.zc_word);
+	}
+
+job_end:
+	if (job_struct->job_count == 0) {
+		kmem_free((job_struct)->jobs, 3*sizeof (char));
+		kmem_free((job_struct), sizeof (dpusm_jobs_t));
+		zia_onload_abd(zio->io_abd, zio->io_size, B_FALSE);
+		return (NULL);
+	}
+	return (job_struct);
+
+#endif
+	(void) props; (void) zio;
+	return (NULL);
+}
 
 int
 zia_init(void)
@@ -939,6 +1122,12 @@ zia_cleanup_abd(abd_t *abd, size_t size,
 }
 
 void
+zia_print_handle(abd_t *abd, const char *id)
+{
+	dpusm->print_handle(ABD_HANDLE(abd), id);
+}
+
+void
 zia_restart_before_vdev(zio_t *zio)
 {
 	blkptr_t *bp = zio->io_bp;
@@ -971,7 +1160,7 @@ zia_restart_before_vdev(zio_t *zio)
 }
 
 int
-zia_zero_fill(abd_t *abd, size_t offset, size_t size)
+zia_zero_fill(abd_t *abd, size_t offset, size_t size, void *async_id)
 {
 #ifdef ZIA
 	if (!dpusm) {
@@ -982,7 +1171,8 @@ zia_zero_fill(abd_t *abd, size_t offset, size_t size)
 		return (ZIA_ERROR);
 	}
 
-	return (dpusm_to_ret(dpusm->zero_fill(ABD_HANDLE(abd), offset, size)));
+	return (dpusm_to_ret(dpusm->zero_fill(ABD_HANDLE(abd),
+	    offset, size, async_id)));
 #else
 	(void) abd; (void) offset; (void) size;
 	return (ZIA_DISABLED);
@@ -993,7 +1183,8 @@ int
 zia_compress(zia_props_t *props, enum zio_compress c,
     abd_t *src, size_t s_len,
     abd_t **dst, uint64_t *d_len,
-    uint8_t level, boolean_t *local_offload)
+    uint8_t level, boolean_t *local_offload,
+    void *async_id)
 {
 #ifdef ZIA
 	if (!dpusm || !props->provider) {
@@ -1003,7 +1194,7 @@ zia_compress(zia_props_t *props, enum zio_compress c,
 	void *cbuf_handle = NULL;
 	*dst = abd_alloc_sametype(src, s_len);
 	const int rc = zia_compress_impl(dpusm, props, c, src, s_len,
-	    dst, &cbuf_handle, d_len, level, local_offload);
+	    dst, &cbuf_handle, d_len, level, local_offload, async_id);
 	if (rc != ZIA_OK) {
 		abd_free(*dst);
 		*dst = NULL;
@@ -1085,7 +1276,7 @@ zia_decompress(zia_props_t *props, enum zio_compress c,
 
 int
 zia_checksum_compute(void *provider, zio_cksum_t *dst, enum zio_checksum alg,
-    zio_t *zio, uint64_t size, boolean_t *local_offload)
+    zio_t *zio, uint64_t size, boolean_t *local_offload, void *async_id)
 {
 #ifdef ZIA
 	if (!dpusm || !provider) {
@@ -1094,6 +1285,17 @@ zia_checksum_compute(void *provider, zio_cksum_t *dst, enum zio_checksum alg,
 
 	const dpusm_checksum_byteorder_t byteorder =
 	    byteorder_to_dpusm(BP_SHOULD_BYTESWAP(zio->io_bp));
+
+#ifdef _KERNEL
+	/*if (BP_GET_BYTEORDER(zio->io_bp) != ZFS_HOST_BYTEORDER) {
+		printk("ZIA TEST: checksum zia: byteorder = %d, byteswap = %d, get_bo = %lld, host_byteorder = %lld, btd_0 = %d", byteorder, BP_SHOULD_BYTESWAP(zio->io_bp), BP_GET_BYTEORDER(zio->io_bp), ZFS_HOST_BYTEORDER, byteorder_to_dpusm(0));
+	}*/
+#endif
+	if (async_id) {
+		return (dpusm_to_ret(dpusm->checksum(checksum_to_dpusm(alg),
+		    byteorder, ABD_HANDLE(zio->io_abd), size, dst->zc_word,
+		    sizeof (dst->zc_word), async_id)));
+	}
 
 	if (!ABD_HANDLE(zio->io_abd)) {
 		dpusm_pc_t *caps = NULL;
@@ -1118,7 +1320,7 @@ zia_checksum_compute(void *provider, zio_cksum_t *dst, enum zio_checksum alg,
 
 	return (dpusm_to_ret(dpusm->checksum(checksum_to_dpusm(alg),
 	    byteorder, ABD_HANDLE(zio->io_abd), size, dst->zc_word,
-	    sizeof (dst->zc_word))));
+	    sizeof (dst->zc_word), NULL)));
 #else
 	(void) provider; (void) dst; (void) alg;
 	(void) zio; (void) size; (void) local_offload;
@@ -1148,7 +1350,7 @@ zia_checksum_error(enum zio_checksum alg, abd_t *abd,
 
 	return (dpusm_to_ret(dpusm->checksum(checksum_to_dpusm(alg),
 	    byteorder, ABD_HANDLE(abd), size, actual_cksum->zc_word,
-	    sizeof (actual_cksum->zc_word))));
+	    sizeof (actual_cksum->zc_word), NULL)));
 #else
 	(void) alg; (void) abd; (void) size;
 	(void) byteswap; (void) actual_cksum;
