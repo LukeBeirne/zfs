@@ -25,15 +25,56 @@ int
 zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
     enum zio_compress c, abd_t *src, size_t s_len,
     abd_t **dst, void **cbuf_handle, uint64_t *c_len,
-    uint8_t level, boolean_t *local_offload)
+    uint8_t level, boolean_t *local_offload, void *async_id)
 {
 	size_t d_len;
 	uint8_t complevel;
 	zio_compress_info_t *ci = &zio_compress_table[c];
 	int ret = ZIA_OK;
 
+	/* DPUSM interface takes in a size_t, not a uint64_t */
+	size_t zia_c_len = (size_t)s_len;
+
 	ASSERT((uint_t)c < ZIO_COMPRESS_FUNCTIONS);
 	ASSERT((uint_t)c == ZIO_COMPRESS_EMPTY || ci->ci_compress != NULL);
+
+	/* Compress at least 12.5% */
+	d_len = s_len - (s_len >> 3);
+
+	complevel = ci->ci_level;
+
+	/*
+	 * If asynchronous is enabled, grab result and return.
+	 * No other work needs to be done other than checking
+	 * the resulting compression size.
+	 */
+	if (async_id) {
+		*cbuf_handle = zia_alloc(props->provider,
+		    s_len);
+		if (!*cbuf_handle) {
+			return (ZIA_ERROR);
+		}
+
+		// Note that we are not doing associate handle in the async
+		// path yet. I don't know if it would be something to consider.
+
+		*local_offload = B_TRUE;
+
+		ret = dpusm->compress(compress_to_dpusm(c), (int8_t)complevel,
+		    ABD_HANDLE(src), s_len, *cbuf_handle, &zia_c_len, async_id);
+
+		if (ret != DPUSM_OK) {
+			zia_free(cbuf_handle);
+			return (dpusm_to_ret(ret));
+		}
+
+		*c_len = zia_c_len;
+		if (*c_len > d_len) {
+			*c_len = s_len;
+		}
+
+		return (dpusm_to_ret(ret));
+	}
 
 	/*
 	 * If the data is all zeros, we don't even need to allocate
@@ -95,11 +136,6 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 		}
 	}
 
-	/* Compress at least 12.5% */
-	d_len = s_len - (s_len >> 3);
-
-	complevel = ci->ci_level;
-
 	if (c == ZIO_COMPRESS_ZSTD) {
 		/* If we don't know the level, we can't compress it */
 		if (level == ZIO_COMPLEVEL_INHERIT) {
@@ -130,10 +166,9 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 		dpusm->associate_handle(*cbuf_handle, ABD_LINEAR_BUF(*dst));
 	}
 
-	/* DPUSM interface takes in a size_t, not a uint64_t */
-	size_t zia_c_len = (size_t)s_len;
 	ret = dpusm->compress(compress_to_dpusm(c), (int8_t)complevel,
-	    ABD_HANDLE(src), s_len, *cbuf_handle, &zia_c_len);
+	    ABD_HANDLE(src), s_len, *cbuf_handle, &zia_c_len, NULL);
+
 	if (ret != DPUSM_OK) {
 		zia_free(cbuf_handle);
 		return (dpusm_to_ret(ret));
@@ -193,7 +228,6 @@ void
 zia_disk_flush_completion(void *zio_ptr, int error)
 {
 	zio_t *zio = (zio_t *)zio_ptr;
-
 	zio->io_error = error;
 
 	if (zio->io_error && (zio->io_error == EOPNOTSUPP))

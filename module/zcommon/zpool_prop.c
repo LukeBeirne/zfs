@@ -280,6 +280,9 @@ zpool_prop_init(void)
 	zprop_register_index(ZPOOL_PROP_ZIA_DISK_WRITE, "zia_disk_write",
 	    1, PROP_DEFAULT, ZFS_TYPE_POOL, "on | off",
 	    "zia_disk_write", boolean_table, sfeatures);
+	zprop_register_index(ZPOOL_PROP_ZIA_ASYNC, "zia_async",
+	    1, PROP_DEFAULT, ZFS_TYPE_POOL, "on | off",
+	    "zia_async", boolean_table, sfeatures);
 
 	zfs_mod_list_supported_free(sfeatures);
 }

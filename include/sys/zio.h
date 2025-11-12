@@ -578,6 +578,8 @@ struct zio {
 	zio_t		*io_exec_next;	/* link on a list of zios to execute */
 
 	boolean_t io_can_offload;
+	void *io_job;
+	void *io_async_id;
 };
 
 enum blk_verify_flag {
