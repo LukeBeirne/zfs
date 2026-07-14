@@ -117,7 +117,7 @@ void zia_prop_warn(boolean_t val, const char *name);
 
 void *zia_get_jobs(zia_props_t *props, zio_t *zio);
 void *zia_async_init(void *jobs);
-int zia_async_fini(zio_t *zio);
+int zia_async_fini(zio_t *zio, size_t size, boolean_t local_offload);
 
 int zia_init(void);
 int zia_fini(void);

@@ -1426,10 +1426,27 @@ zio_write(zio_t *pio, spa_t *spa, uint64_t txg, blkptr_t *bp,
 	zio->io_async_id = NULL;
 	zia_props_t *props = zia_get_props(spa);
 
-	if (props->async && !BP_IS_METADATA(zio->io_bp)) {
+	if (!BP_IS_METADATA(zio->io_bp)) {
+#ifdef _KERNEL
+		printk("ZIA TEST: not metadata");
+#endif
+	}
+
+	enum zio_compress compress = zp->zp_compress;
+	//if (props->async && BP_IS_METADATA(zio->io_bp)) {
+	//if (props->async && !BP_IS_METADATA(zio->io_bp)) {
+	//if (props->async && compress == 10) { //10 for data, 15 for md
+	if (props->async) { //10 for data, 15 for md
 		zio->io_job = zia_get_jobs(props, zio);
 		zio->io_async_id = zia_async_init(zio->io_job);
+#ifdef _KERNEL
+		//printk("ZIA TEST: in async, jobs = %p", zio->io_job);
+#endif
 	}
+	(void) compress;
+#ifdef _KERNEL
+	//printk("ZIA TEST: async = %d, compress = %d, bool = %d", props->async, compress, props->async && compress == 10);
+#endif
 
 	return (zio);
 }
@@ -2045,6 +2062,11 @@ zio_write_compress(zio_t *zio)
 		} else if (compress == ZIO_COMPRESS_EMPTY) {
 			psize = lsize;
 		} else {
+#ifdef _KERNEL
+			if (!BP_IS_METADATA(bp)) {
+				printk("ZIA TEST: async = %p", zio->io_async_id);
+			}
+#endif
 			int zia_rc = ZIA_FALLBACK;
 			if ((zia_props->compress == 1) &&
 			    (zio->io_can_offload == B_TRUE)) {
@@ -2054,14 +2076,55 @@ zio_write_compress(zio_t *zio)
 				    zio->io_async_id);
 			}
 
+#ifdef _KERNEL
+			/*if (cabd && zio->io_async_id && zia_rc == ZIA_OK) {
+				int ret = zia_onload_abd(cabd, psize, B_FALSE);
+				(void) ret;
+
+				if (ABD_LINEAR_BUF(zio->io_abd)) {
+					//printk("ZIA TEST: abd = %02x", *(char *)ABD_LINEAR_BUF(zio->io_abd));
+				}
+
+				char str[40];
+				(void) str;
+
+				if (ABD_LINEAR_BUF(cabd)) {
+					for (int i = 0; i < 32; i++) {
+						printk("async %p (%d): %02x", zio->io_job, i,
+						    *((char *)ABD_LINEAR_BUF(cabd) + i));
+						//str[i] = *((char *)ABD_LINEAR_BUF(cabd) + i);
+					}
+					//printk("async %p: %s", zio->io_async_id, str);
+				}
+				abd_free(cabd);
+				zia_rc = ZIA_ERROR;
+			}*/
+#endif
+
+			if (zia_rc == ZIA_OK && BP_IS_METADATA(bp)) {
+				//zia_print_handle(zio->io_abd, "after comp ok");
+			}
+
 			if (zia_rc != ZIA_OK) {
 				ASSERT(zia_is_offloaded(cabd) == B_FALSE);
-				zia_rc = zia_cleanup_abd(zio->io_abd,
-				    lsize, local_offload, B_FALSE);
-
+				//zia_print_handle(zio->io_abd, "after comp bad");
+				//zia_rc = zia_cleanup_abd(zio->io_abd,
+				//    lsize, local_offload, B_FALSE);
 				if (zio->io_async_id) {
-					zia_async_fini(zio);
+					zia_rc = zia_async_fini(zio, lsize, B_TRUE);
+#ifdef _KERNEL
+					//printk("ZIA TEST: async fini, rc = %d", zia_rc);
+#endif
+				} else {
+					zia_rc = zia_cleanup_abd(zio->io_abd,
+					    lsize, local_offload, B_FALSE);
+					if (!BP_IS_METADATA(bp)) {
+#ifdef _KERNEL
+						printk("ZIA TEST: zia cleanup, rc = %d", zia_rc);
+#endif
+					}
 				}
+
 
 				/*
 				 * if data has to be brought back for cpu
@@ -2100,7 +2163,7 @@ zio_write_compress(zio_t *zio)
 			 */
 			if (zio->io_async_id &&
 			    zia_props->compress == 1) {
-				zia_async_fini(zio);
+				zia_async_fini(zio, lsize, local_offload);
 			}
 			/* source abd is still offloaded */
 		} else if (psize <= BPE_PAYLOAD_SIZE && !zp->zp_encrypt &&
@@ -2175,6 +2238,7 @@ zio_write_compress(zio_t *zio)
 					if (zia_zero_fill(cabd,
 					    psize, rounded - psize,
 					    zio->io_async_id) == ZIA_OK) {
+						//zia_print_handle(zio->io_abd, "after zf ok");
 						/*
 						 * don't aggregate
 						 * offloaded data
@@ -2182,6 +2246,7 @@ zio_write_compress(zio_t *zio)
 						zio->io_flags |=
 						    ZIO_FLAG_DONT_AGGREGATE;
 					} else {
+						//zia_print_handle(zio->io_abd, "after zf bad");
 						/* fill with zeros in memory */
 						if (zia_onload_abd(cabd, psize,
 						    B_FALSE) == ZIA_OK) {
@@ -5794,7 +5859,7 @@ zio_done(zio_t *zio)
 
 	// ZIA TEST: async_fini 1
 	if (zio->io_async_id) {
-		zia_async_fini(zio);
+		zia_async_fini(zio, zio->io_lsize, B_FALSE);
 	}
 
 	/*

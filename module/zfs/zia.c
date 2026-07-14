@@ -87,27 +87,32 @@ zia_prop_warn(boolean_t val, const char *name)
 #endif
 }
 
-#ifdef ZIA
 void *
 zia_async_init(void *jobs)
 {
+#ifdef ZIA
 	if (!jobs) {
 		return (NULL);
 	}
 	return (dpusm->async_init((dpusm_jobs_t *)jobs));
-}
 #endif
+	(void) jobs;
+	return (NULL);
+}
 
-#ifdef ZIA
 int
-zia_async_fini(zio_t *zio)
+zia_async_fini(zio_t *zio, size_t size, boolean_t local_offload)
 {
+#ifdef ZIA
 	int ret = ZIA_OK;
 	int max_jobs = 3;
 
 	if (zia_is_offloaded(zio->io_abd)) {
-		ret = zia_onload_abd(zio->io_abd, zio->io_size, B_FALSE);
+		//ret = zia_onload_abd(zio->io_abd, size, B_FALSE);
+		//ret = zia_onload_abd(zio->io_abd, zio->io_size, B_FALSE);
+		ret = zia_cleanup_abd(zio->io_abd, size, local_offload, B_FALSE);
 	}
+	(void) local_offload;
 
 	dpusm_jobs_t *job_struct = zio->io_job;
 	void *async_id = zio->io_async_id;
@@ -124,8 +129,10 @@ zia_async_fini(zio_t *zio)
 	zio->io_async_id = NULL;
 
 	return (ret);
-}
 #endif
+	(void) zio; (void) size; (void) local_offload;
+	return (ZIA_DISABLED);
+}
 
 int
 dpusm_to_ret(const int dpusm_ret)
@@ -306,8 +313,9 @@ void *
 zia_get_jobs(zia_props_t *props, zio_t *zio)
 {
 #ifdef ZIA
-	if (!zia_is_used(zio))
+	if (!zia_is_used(zio)) {
 		return (NULL);
+	}
 
 	int max_jobs = 3;
 
@@ -325,6 +333,9 @@ zia_get_jobs(zia_props_t *props, zio_t *zio)
 	if (ret != ZIA_OK) {
 		goto job_end;
 	}
+
+	job_struct->debug_ptr = job_struct;
+	job_struct->debug_flag = 1;
 
 	/* COMPRESSION */
 	if (zio->io_prop.zp_compress != ZIO_COMPRESS_OFF && !props->compress) {
@@ -1124,7 +1135,10 @@ zia_cleanup_abd(abd_t *abd, size_t size,
 void
 zia_print_handle(abd_t *abd, const char *id)
 {
+#ifdef ZIA
 	dpusm->print_handle(ABD_HANDLE(abd), id);
+#endif
+	(void) abd; (void) id;
 }
 
 void
@@ -1175,6 +1189,7 @@ zia_zero_fill(abd_t *abd, size_t offset, size_t size, void *async_id)
 	    offset, size, async_id)));
 #else
 	(void) abd; (void) offset; (void) size;
+	(void) async_id;
 	return (ZIA_DISABLED);
 #endif
 }
@@ -1205,7 +1220,7 @@ zia_compress(zia_props_t *props, enum zio_compress c,
 #else
 	(void) props; (void) c; (void) src; (void) s_len;
 	(void) dst; (void) d_len; (void) level;
-	(void) local_offload;
+	(void) local_offload; (void) async_id;
 	return (ZIA_DISABLED);
 #endif
 }
@@ -1287,9 +1302,10 @@ zia_checksum_compute(void *provider, zio_cksum_t *dst, enum zio_checksum alg,
 	    byteorder_to_dpusm(BP_SHOULD_BYTESWAP(zio->io_bp));
 
 #ifdef _KERNEL
-	/*if (BP_GET_BYTEORDER(zio->io_bp) != ZFS_HOST_BYTEORDER) {
-		printk("ZIA TEST: checksum zia: byteorder = %d, byteswap = %d, get_bo = %lld, host_byteorder = %lld, btd_0 = %d", byteorder, BP_SHOULD_BYTESWAP(zio->io_bp), BP_GET_BYTEORDER(zio->io_bp), ZFS_HOST_BYTEORDER, byteorder_to_dpusm(0));
-	}*/
+	//if (BP_GET_BYTEORDER(zio->io_bp) != ZFS_HOST_BYTEORDER) {
+	if (BP_IS_METADATA(zio->io_bp)) {
+		//printk("ZIA TEST: checksum zia: byteorder = %d, byteswap = %d, get_bo = %lld, host_byteorder = %lld, btd_0 = %d, results = %p", byteorder, BP_SHOULD_BYTESWAP(zio->io_bp), BP_GET_BYTEORDER(zio->io_bp), ZFS_HOST_BYTEORDER, byteorder_to_dpusm(0), async_id);
+	}
 #endif
 	if (async_id) {
 		return (dpusm_to_ret(dpusm->checksum(checksum_to_dpusm(alg),
@@ -1324,6 +1340,7 @@ zia_checksum_compute(void *provider, zio_cksum_t *dst, enum zio_checksum alg,
 #else
 	(void) provider; (void) dst; (void) alg;
 	(void) zio; (void) size; (void) local_offload;
+	(void) async_id;
 	return (ZIA_FALLBACK);
 #endif
 }

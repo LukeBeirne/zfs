@@ -342,7 +342,7 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 	blkptr_t *bp = zio->io_bp;
 	uint64_t offset = zio->io_offset;
 	zio_checksum_info_t *ci = &zio_checksum_table[checksum];
-	zio_cksum_t cksum, saved;
+	zio_cksum_t cksum, saved, cksum2;
 	spa_t *spa = zio->io_spa;
 	boolean_t insecure = (ci->ci_flags & ZCHECKSUM_FLAG_DEDUP) == 0;
 
@@ -424,7 +424,7 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		/* fall back to ZFS implementation */
 		if (zia_rc != ZIA_OK) {
 			if (zio->io_async_id) {
-				zia_rc = zia_async_fini(zio);
+				zia_rc = zia_async_fini(zio, size, local_offload);
 			} else {
 				zia_rc = zia_cleanup_abd(abd, size,
 				    local_offload, B_FALSE);
@@ -439,9 +439,16 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		} else {
 			zio->io_flags |= ZIO_FLAG_DONT_AGGREGATE;
 			if (zio->io_async_id) {
-				zia_rc = zia_async_fini(zio);
+				zia_rc = zia_async_fini(zio, size, local_offload);
 			}
 		}
+		(void)cksum2;
+		ci->ci_func[0](abd, size,
+		    spa->spa_cksum_tmpls[checksum],
+		    &cksum2);
+#ifdef _KERNEL
+		printk("ZIA TEST: cksum 1 = %016llx, %016llx, %016llx, %016llx\n cksum 2 = %016llx, %016llx, %016llx, %016llx", cksum.zc_word[0], cksum.zc_word[1], cksum.zc_word[2], cksum.zc_word[3], cksum2.zc_word[0], cksum2.zc_word[1], cksum2.zc_word[2], cksum2.zc_word[3]);
+#endif
 		if (BP_USES_CRYPT(bp) && BP_GET_TYPE(bp) != DMU_OT_OBJSET)
 			zio_checksum_handle_crypt(&cksum, &saved, insecure);
 		bp->blk_cksum = cksum;

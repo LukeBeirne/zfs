@@ -420,6 +420,9 @@ sw_provider_async_init(dpusm_jobs_t *jobs) {
 	ko_results_t *results = kzalloc(sizeof (ko_results_t), GFP_KERNEL);
 	results->status = DPUSM_OK;
 
+	//results->status = DPUSM_ERROR;
+	//return (results);
+
 	dpusm_ops_t j;
 	while (count < jobs->job_count) {
 		j = jobs->jobs[count];
@@ -428,6 +431,8 @@ sw_provider_async_init(dpusm_jobs_t *jobs) {
 				void *comp_dst =
 				    kernel_offloader_alloc(src_len);
 				size_t dst_len = src_len;
+
+				//printk("KO TEST: async alg = %ld, level = %d, results = %p", jobs->comp_alg, jobs->comp_level, results);
 
 				results->status = sw_provider_compress(
 				    jobs->comp_alg, jobs->comp_level,
@@ -450,6 +455,7 @@ sw_provider_async_init(dpusm_jobs_t *jobs) {
 					break;
 				}
 
+				//printk("KO TEST: async offset = %ld, size = %lld, results = %p", src_len, rounded - src_len, results);
 				results->status = sw_provider_zero_fill(src,
 				    src_len, rounded - src_len, NULL);
 
@@ -462,6 +468,7 @@ sw_provider_async_init(dpusm_jobs_t *jobs) {
 				void *cksum_ptr =
 				    kernel_offloader_ptr(cksum_dst);
 
+				//printk("KO TEST: byteorder = %d, results = %p", jobs->cksum_order, jobs->debug_ptr);
 				results->status = sw_provider_checksum(
 				    jobs->cksum_alg, jobs->cksum_order,
 				    src, src_len, cksum_ptr, jobs->cksum_size,
