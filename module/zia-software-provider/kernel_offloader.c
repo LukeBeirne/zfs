@@ -516,6 +516,7 @@ int
 kernel_offloader_zero_fill(void *handle, size_t offset, size_t size,
     void *results)
 {
+	//printk("KO TEST: offset = %ld, size = %ld, results = %p", offset, size, results);
 	/* See note in kernel_offloader.h for async results handling */
 	if (results) {
 		return (((ko_results_t *)results)->status);
@@ -601,6 +602,7 @@ kernel_offloader_gzip_compress(koh_t *src, size_t s_len,
 {
 	/* See note in kernel_offloader.h for async results handling */
 	if (results) {
+		//printk("KO TEST: status = %d", results->status);
 		if (results->status == DPUSM_OK) {
 			koh_t *comp_dst = unswizzle((koh_t *)results->comp_dst);
 			void *save = dst->ptr;
@@ -677,6 +679,7 @@ kernel_offloader_compress(dpusm_compress_t alg, int level,
 		status = kernel_offloader_gzip_compress(src_koh, s_len,
 		    dst_koh, (size_t *)ptr_start(d_len_koh, 0), level, job_id);
 	} else if (alg == DPUSM_COMPRESS_LZ4) {
+		//printk("KO TEST: alg = %ld, level = %d, results = %p", alg, level, job_id);
 		status = kernel_offloader_lz4_compress(src_koh, dst_koh, s_len,
 		    level, (size_t *)ptr_start(d_len_koh, 0), job_id);
 	}
