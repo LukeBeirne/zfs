@@ -154,7 +154,7 @@ typedef enum zfs_error {
 	EZFS_ASHIFT_MISMATCH,   /* can't add vdevs with different ashifts */
 	EZFS_NO_USER_NS_SUPPORT, /* kernel built without CONFIG_USER_NS */
 	EZFS_ZIA_NONEXISTENT_PROVIDER,   /* given provider does not exist */
-	EZFS_ZIA_NONCAPABLE_PROVIDER, /* given provider cannot perform assigned task */
+	EZFS_ZIA_NONCAPABLE_PROVIDER, /* given provider cannot perform task */
 	EZFS_UNKNOWN
 } zfs_error_t;
 

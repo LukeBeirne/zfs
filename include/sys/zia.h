@@ -95,9 +95,6 @@ typedef struct zia_props {
 	boolean_t can_offload;
 	void *provider;
 
-	/* minimum size allowed to offload - set by ashift */
-	size_t min_offload_size;
-
 	void *compress;
 	void *decompress;
 
@@ -135,7 +132,7 @@ int zia_put_all_providers(zia_props_t *zia_props, vdev_t *vdev);
 int zia_disable_offloading(zio_t *zio, boolean_t reexecute);
 
 /* check if offloading can occur */
-boolean_t zia_is_used(zio_t *zio);
+boolean_t zia_is_used(zia_props_t *props);
 
 /*
  * check if a handle is associated with this pointer
@@ -158,10 +155,9 @@ int zia_onload(void **handle, void *buf, size_t size);
 
 /* calls abd_iterate_func on the abd to copy abd data back and forth */
 int zia_offload_abd(void *provider, abd_t *abd,
-    size_t size, size_t min_offload_size,
-    boolean_t *local_offload, boolean_t lock);
+    size_t size, boolean_t *local_offload, boolean_t lock);
 int zia_offload_abd_between(void *provider, abd_t *abd,
-    size_t size, size_t min_offload_size);
+    size_t size);
 int zia_onload_abd(abd_t *abd, size_t size,
     boolean_t keep_handle);
 int zia_free_abd(abd_t *abd, boolean_t lock);
@@ -193,8 +189,8 @@ zia_decompress(zia_props_t *props, enum zio_compress c,
 int zia_checksum_compute(void *provider, zio_cksum_t *dst,
     enum zio_checksum alg, zio_t *zio, uint64_t size,
     boolean_t *local_offload);
-int zia_checksum_error(enum zio_checksum alg, abd_t *abd,
-    uint64_t size, int byteswap, zio_cksum_t *actual_cksum);
+int zia_checksum_error(void *provider, enum zio_checksum alg,
+    abd_t *abd, uint64_t size, int byteswap, zio_cksum_t *actual_cksum);
 
 /* raidz */
 int zia_raidz_alloc(zio_t *zio, raidz_row_t *rr, boolean_t rec,

@@ -1102,7 +1102,7 @@ zio_create(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 	}
 
 	/* turn off encryption and dedup if Z.I.A. is used */
-	if (zia_is_used(zio) == B_TRUE) {
+	if (zia_is_used(zia_get_props(zio->io_spa)) == B_TRUE) {
 		zio->io_prop.zp_dedup = B_FALSE;
 		zio->io_prop.zp_dedup_verify = B_FALSE;
 		zio->io_prop.zp_encrypt = B_FALSE;

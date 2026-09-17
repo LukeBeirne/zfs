@@ -259,9 +259,6 @@ zpool_prop_init(void)
 	zprop_register_string(ZPOOL_PROP_ZIA_RAIDZ1_GEN, "zia_raidz1_gen", NULL,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "<Z.I.A. Provider Name>", "PROVIDER",
 	    sfeatures);
-	zprop_register_string(ZPOOL_PROP_ZIA_RAIDZ1_GEN, "zia_raidz1_gen", NULL,
-	    PROP_DEFAULT, ZFS_TYPE_POOL, "<Z.I.A. Provider Name>", "PROVIDER",
-	    sfeatures);
 	zprop_register_string(ZPOOL_PROP_ZIA_RAIDZ2_GEN, "zia_raidz2_gen", NULL,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "<Z.I.A. Provider Name>", "PROVIDER",
 	    sfeatures);

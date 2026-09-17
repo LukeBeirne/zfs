@@ -320,7 +320,8 @@ libzfs_error_description(libzfs_handle_t *hdl)
 	case EZFS_ZIA_NONEXISTENT_PROVIDER:
 		return (dgettext(TEXT_DOMAIN, "given provider does not exist"));
 	case EZFS_ZIA_NONCAPABLE_PROVIDER:
-		return (dgettext(TEXT_DOMAIN, "given provider cannot perform assigned task"));
+		return (dgettext(TEXT_DOMAIN, "given provider cannot perform "
+		    "assigned task"));
 	case EZFS_UNKNOWN:
 		return (dgettext(TEXT_DOMAIN, "unknown error"));
 	default:
