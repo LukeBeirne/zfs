@@ -1033,8 +1033,8 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ1_GEN:
 			strval = fnvpair_value_string(elem);
-			if ((error = zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->raidz.gen[1], spa, tx,
+			if ((error = zia_initialize_provider(strval, elem,
+			    zia_props, &zia_props->raidz.gen[1], spa, tx,
 			    "RAIDZ 1 Generation")) != ZIA_OK) {
 				error = SET_ERROR(error);
 			}
@@ -1061,7 +1061,7 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				    tx, "RAIDZ 1 Reconstruction") != ZIA_OK)
 					error = SET_ERROR(EINVAL);
 			}
-#ifdef _KERNEL
+#if defined(_KERNEL) && defined(__linux__)
 			else {
 				printk("Z.I.A. RAIDZ 1 Reconstruction "
 				    "requires checksum, but no provider "
@@ -1077,7 +1077,7 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				    tx, "RAIDZ 2 Reconstruction") != ZIA_OK)
 					error = SET_ERROR(EINVAL);
 			}
-#ifdef _KERNEL
+#if defined(_KERNEL) && defined(__linux__)
 			else {
 				printk("Z.I.A. RAIDZ 2 Reconstruction"
 				    "requires checksum, but no provider"
@@ -1093,7 +1093,7 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				    tx, "RAIDZ 3 Reconstruction") != ZIA_OK)
 					error = SET_ERROR(EINVAL);
 			}
-#ifdef _KERNEL
+#if defined(_KERNEL) && defined(__linux__)
 			else {
 				printk("Z.I.A. RAIDZ 3 Reconstruction"
 				    "requires checksum, but no provider"

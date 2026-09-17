@@ -59,14 +59,14 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 		}
 
 		ret = zia_offload_abd(props->compress, src, s_len,
-		    props->min_offload_size, local_offload, B_FALSE);
+		    local_offload, B_FALSE);
 		if (ret != ZIA_OK) {
 			return (ret);
 		}
 	} else {
 		/* came in offloaded */
 		ret = zia_offload_abd_between(props->compress,
-		    src, s_len, props->min_offload_size);
+		    src, s_len);
 		if (ret != ZIA_OK)
 			return (ret);
 

@@ -95,9 +95,6 @@ typedef struct zia_props {
 	boolean_t can_offload;
 	void *provider;
 
-	/* minimum size allowed to offload - set by ashift */
-	size_t min_offload_size;
-
 	void *compress;
 	void *decompress;
 
@@ -158,10 +155,9 @@ int zia_onload(void **handle, void *buf, size_t size);
 
 /* calls abd_iterate_func on the abd to copy abd data back and forth */
 int zia_offload_abd(void *provider, abd_t *abd,
-    size_t size, size_t min_offload_size,
-    boolean_t *local_offload, boolean_t lock);
+    size_t size, boolean_t *local_offload, boolean_t lock);
 int zia_offload_abd_between(void *provider, abd_t *abd,
-    size_t size, size_t min_offload_size);
+    size_t size);
 int zia_onload_abd(abd_t *abd, size_t size,
     boolean_t keep_handle);
 int zia_free_abd(abd_t *abd, boolean_t lock);
