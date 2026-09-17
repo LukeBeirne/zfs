@@ -57,7 +57,7 @@ function load_provider
     if [[ "$(zia_available)" == "yes" ]]
     then
         log_must insmod "${SBIN_DIR}/module/${PROVIDER}.ko"
-        log_must zpool set zia_provider="${PROVIDER_MODULE}" "${TESTPOOL}"
+        #log_must zpool set zia_provider="${PROVIDER_MODULE}" "${TESTPOOL}"
     fi
 }
 
@@ -65,23 +65,23 @@ function unload_provider
 {
     if [[ "$(zia_available)" == "yes" ]]
     then
-        log_must zpool set zia_provider="NULL" "${TESTPOOL}"
+        #log_must zpool set zia_provider="NULL" "${TESTPOOL}"
         log_must rmmod "${PROVIDER_MODULE}"
     fi
 }
 
 function offload_all
 {
-    log_must zpool set zia_compress="on"   "${TESTPOOL}"
-    log_must zpool set zia_checksum="on"   "${TESTPOOL}"
-    log_must zpool set zia_raidz1_gen="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz2_gen="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz3_gen="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz1_rec="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz2_rec="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz3_rec="on" "${TESTPOOL}"
-    log_must zpool set zia_disk_write="on" "${TESTPOOL}"
-    log_must zpool set zia_file_write="on" "${TESTPOOL}"
+    log_must zpool set zia_compress="${PROVIDER_MODULE}"   "${TESTPOOL}"
+    log_must zpool set zia_checksum="${PROVIDER_MODULE}"   "${TESTPOOL}"
+    log_must zpool set zia_raidz1_gen="${PROVIDER_MODULE}" "${TESTPOOL}"
+    log_must zpool set zia_raidz2_gen="${PROVIDER_MODULE}" "${TESTPOOL}"
+    log_must zpool set zia_raidz3_gen="${PROVIDER_MODULE}" "${TESTPOOL}"
+    log_must zpool set zia_raidz1_rec="${PROVIDER_MODULE}" "${TESTPOOL}"
+    log_must zpool set zia_raidz2_rec="${PROVIDER_MODULE}" "${TESTPOOL}"
+    log_must zpool set zia_raidz3_rec="${PROVIDER_MODULE}" "${TESTPOOL}"
+    log_must zpool set zia_disk_write="${PROVIDER_MODULE}" "${TESTPOOL}"
+    log_must zpool set zia_file_write="${PROVIDER_MODULE}" "${TESTPOOL}"
 }
 
 #
@@ -90,21 +90,21 @@ function offload_all
 #
 function loop_offloads_and_write
 {
-    for comp in on off
+    for comp in ${PROVIDER_MODULE} off
     do
         log_must zpool set zia_compress="${comp}" "${TESTPOOL}"
 
-        for cksum in on off
+        for cksum in ${PROVIDER_MODULE} off
         do
             log_must zpool set zia_checksum="${cksum}" "${TESTPOOL}"
 
-            for raidz in on off
+            for raidz in ${PROVIDER_MODULE} off
             do
                 log_must zpool set zia_raidz1_gen="${raidz}" "${TESTPOOL}"
                 log_must zpool set zia_raidz2_gen="${raidz}" "${TESTPOOL}"
                 log_must zpool set zia_raidz3_gen="${raidz}" "${TESTPOOL}"
 
-                for diskfile in on off
+                for diskfile in ${PROVIDER_MODULE} off
                 do
                     log_must zpool set zia_disk_write="${diskfile}" "${TESTPOOL}"
                     log_must zpool set zia_file_write="${diskfile}" "${TESTPOOL}"
