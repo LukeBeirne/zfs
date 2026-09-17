@@ -2184,7 +2184,7 @@ arc_buf_fill(arc_buf_t *buf, spa_t *spa, const zbookmark_phys_t *zb,
 
 			int ret = ZIA_FALLBACK;
 			zia_props_t *zia_props = zia_get_props(spa);
-			if ((zia_props->decompress == 1) &&
+			if ((zia_props->decompress) &&
 			    (hdr->b_can_offload == B_TRUE)) {
 				ret = zia_decompress(zia_props,
 				    HDR_GET_COMPRESS(hdr),

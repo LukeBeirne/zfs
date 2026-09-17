@@ -664,12 +664,24 @@ Does not have any effect if RAIDZ3 is disabled.
 .It Sy zia_raidz1_rec Ns = Ns Sy (unset) | Ns Sy Z.I.A. Provider Name
 Controls whether the pool should offload RAIDZ1 reconstruction.
 Does not have any effect if RAIDZ1 is disabled.
+Requires
+.Sy zia_raidz1_gen .
+The provider is also used to regenerate parity for the
+reconstructed data, so it must support RAIDZ1 parity generation.
 .It Sy zia_raidz2_rec Ns = Ns Sy (unset) | Ns Sy Z.I.A. Provider Name
 Controls whether the pool should offload RAIDZ2 reconstruction.
 Does not have any effect if RAIDZ2 is disabled.
+Requires
+.Sy zia_raidz2_gen .
+The provider is also used to regenerate parity for the
+reconstructed data, so it must support RAIDZ2 parity generation.
 .It Sy zia_raidz3_rec Ns = Ns Sy (unset) | Ns Sy Z.I.A. Provider Name
 Controls whether the pool should offload RAIDZ3 reconstruction.
 Does not have any effect if RAIDZ3 is disabled.
+Requires
+.Sy zia_raidz3_gen .
+The provider is also used to regenerate parity for the
+reconstructed data, so it must support RAIDZ3 parity generation.
 .It Sy zia_disk_write Ns = Ns Sy (unset) | Ns Sy Z.I.A. Provider Name
 Controls whether a pool should offload write I/Os to disks.
 .It Sy zia_file_write Ns = Ns Sy (unset) | Ns Sy Z.I.A. Provider Name

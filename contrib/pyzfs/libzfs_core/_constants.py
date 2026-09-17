@@ -112,6 +112,7 @@ zfs_errno = enum_with_offset(1024, [
         'ZFS_ERR_CRYPTO_KEY_MISMATCH',
         'ZFS_ERR_RAIDZ_EXPAND_TOO_WIDE',
         'ZFS_ERR_ZIA_NONEXISTENT_PROVIDER',
+        'ZFS_ERR_ZIA_NONCAPABLE_PROVIDER',
     ],
     {}
 )

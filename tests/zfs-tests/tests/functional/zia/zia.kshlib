@@ -57,31 +57,74 @@ function load_provider
     if [[ "$(zia_available)" == "yes" ]]
     then
         log_must insmod "${SBIN_DIR}/module/${PROVIDER}.ko"
-        log_must zpool set zia_provider="${PROVIDER_MODULE}" "${TESTPOOL}"
     fi
 }
 
+# Every offload holds a reference to its provider,
+# so they all have to be released before rmmod
 function unload_provider
 {
     if [[ "$(zia_available)" == "yes" ]]
     then
-        log_must zpool set zia_provider="NULL" "${TESTPOOL}"
+        log_must offload_none
         log_must rmmod "${PROVIDER_MODULE}"
+    fi
+}
+
+# Without Z.I.A. or a loaded provider, only "off" can be set
+function zia_offload_value
+{
+    if [[ "$(zia_available)" == "yes" ]] && \
+        lsmod | grep -q "^${PROVIDER_MODULE} "
+    then
+        echo "${PROVIDER_MODULE}"
+    else
+        echo "off"
+    fi
+}
+
+# values to loop over in loop_offloads_and_write
+function zia_offload_values
+{
+    typeset provider="$(zia_offload_value)"
+    if [[ "${provider}" == "off" ]]
+    then
+        echo "off"
+    else
+        echo "${provider} off"
     fi
 }
 
 function offload_all
 {
-    log_must zpool set zia_compress="on"   "${TESTPOOL}"
-    log_must zpool set zia_checksum="on"   "${TESTPOOL}"
-    log_must zpool set zia_raidz1_gen="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz2_gen="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz3_gen="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz1_rec="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz2_rec="on" "${TESTPOOL}"
-    log_must zpool set zia_raidz3_rec="on" "${TESTPOOL}"
-    log_must zpool set zia_disk_write="on" "${TESTPOOL}"
-    log_must zpool set zia_file_write="on" "${TESTPOOL}"
+    typeset provider="$(zia_offload_value)"
+
+    log_must zpool set zia_compress="${provider}"   "${TESTPOOL}"
+    log_must zpool set zia_checksum="${provider}"   "${TESTPOOL}"
+    log_must zpool set zia_raidz1_gen="${provider}" "${TESTPOOL}"
+    log_must zpool set zia_raidz2_gen="${provider}" "${TESTPOOL}"
+    log_must zpool set zia_raidz3_gen="${provider}" "${TESTPOOL}"
+    log_must zpool set zia_raidz1_rec="${provider}" "${TESTPOOL}"
+    log_must zpool set zia_raidz2_rec="${provider}" "${TESTPOOL}"
+    log_must zpool set zia_raidz3_rec="${provider}" "${TESTPOOL}"
+    log_must zpool set zia_disk_write="${provider}" "${TESTPOOL}"
+    log_must zpool set zia_file_write="${provider}" "${TESTPOOL}"
+}
+
+function offload_none
+{
+    log_must zpool set zia_disk_write="off" "${TESTPOOL}"
+    log_must zpool set zia_file_write="off" "${TESTPOOL}"
+    log_must zpool set zia_raidz1_rec="off" "${TESTPOOL}"
+    log_must zpool set zia_raidz2_rec="off" "${TESTPOOL}"
+    log_must zpool set zia_raidz3_rec="off" "${TESTPOOL}"
+    log_must zpool set zia_raidz1_gen="off" "${TESTPOOL}"
+    log_must zpool set zia_raidz2_gen="off" "${TESTPOOL}"
+    log_must zpool set zia_raidz3_gen="off" "${TESTPOOL}"
+    log_must zpool set zia_checksum="off"   "${TESTPOOL}"
+    log_must zpool set zia_decompress="off" "${TESTPOOL}"
+    log_must zpool set zia_compress="off"   "${TESTPOOL}"
+    log_must zpool set zia_provider="off"   "${TESTPOOL}"
 }
 
 #
@@ -90,21 +133,23 @@ function offload_all
 #
 function loop_offloads_and_write
 {
-    for comp in on off
+    typeset values="$(zia_offload_values)"
+
+    for comp in ${values}
     do
         log_must zpool set zia_compress="${comp}" "${TESTPOOL}"
 
-        for cksum in on off
+        for cksum in ${values}
         do
             log_must zpool set zia_checksum="${cksum}" "${TESTPOOL}"
 
-            for raidz in on off
+            for raidz in ${values}
             do
                 log_must zpool set zia_raidz1_gen="${raidz}" "${TESTPOOL}"
                 log_must zpool set zia_raidz2_gen="${raidz}" "${TESTPOOL}"
                 log_must zpool set zia_raidz3_gen="${raidz}" "${TESTPOOL}"
 
-                for diskfile in on off
+                for diskfile in ${values}
                 do
                     log_must zpool set zia_disk_write="${diskfile}" "${TESTPOOL}"
                     log_must zpool set zia_file_write="${diskfile}" "${TESTPOOL}"

@@ -808,7 +808,6 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 	uint64_t objnum = 0;
 	boolean_t has_feature = B_FALSE;
 	zia_props_t *zia_props = zia_get_props(spa);
-	dmu_tx_t *tx = NULL;
 
 	elem = NULL;
 	while ((elem = nvlist_next_nvpair(props, elem)) != NULL) {
@@ -1005,113 +1004,112 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 
 		case ZPOOL_PROP_ZIA_PROVIDER:
 			strval = fnvpair_value_string(elem);
-			if (zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->provider, spa, tx, NULL)
-			    != ZIA_OK)
+			if (zia_initialize_provider(strval, zia_props,
+			    &zia_props->provider, spa, NULL) != ZIA_OK)
 				error = SET_ERROR(EINVAL);
 			break;
 		case ZPOOL_PROP_ZIA_COMPRESS:
 			strval = fnvpair_value_string(elem);
-			if (zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->compress, spa, tx, "Compression")
-			    != ZIA_OK)
+			if (zia_initialize_provider(strval, zia_props,
+			    &zia_props->compress, spa, "Compression") != ZIA_OK)
 				error = SET_ERROR(EINVAL);
 			break;
 		case ZPOOL_PROP_ZIA_DECOMPRESS:
 			strval = fnvpair_value_string(elem);
-			if (zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->decompress, spa, tx, "Decompression")
+			if (zia_initialize_provider(strval, zia_props,
+			    &zia_props->decompress, spa, "Decompression")
 			    != ZIA_OK)
 				error = SET_ERROR(EINVAL);
 			break;
 		case ZPOOL_PROP_ZIA_CHECKSUM:
 			strval = fnvpair_value_string(elem);
-			if (zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->checksum, spa, tx, "Checksum")
-			    != ZIA_OK)
+			if (zia_initialize_provider(strval, zia_props,
+			    &zia_props->checksum, spa, "Checksum") != ZIA_OK)
 				error = SET_ERROR(EINVAL);
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ1_GEN:
 			strval = fnvpair_value_string(elem);
-			if ((error = zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->raidz.gen[1], spa, tx,
-			    "RAIDZ 1 Generation")) != ZIA_OK) {
-				error = SET_ERROR(error);
-			}
+			if (zia_initialize_provider(strval, zia_props,
+			    &zia_props->raidz.gen[1], spa,
+			    "RAIDZ 1 Generation") != ZIA_OK)
+				error = SET_ERROR(EINVAL);
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ2_GEN:
 			strval = fnvpair_value_string(elem);
-			if (zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->raidz.gen[2], spa, tx,
+			if (zia_initialize_provider(strval, zia_props,
+			    &zia_props->raidz.gen[2], spa,
 			    "RAIDZ 2 Generation") != ZIA_OK)
 				error = SET_ERROR(EINVAL);
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ3_GEN:
 			strval = fnvpair_value_string(elem);
-			if (zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->raidz.gen[3], spa, tx,
+			if (zia_initialize_provider(strval, zia_props,
+			    &zia_props->raidz.gen[3], spa,
 			    "RAIDZ 3 Generation") != ZIA_OK)
 				error = SET_ERROR(EINVAL);
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ1_REC:
-			if (zia_props->checksum) {
-				strval = fnvpair_value_string(elem);
-				if (zia_initialize_provider(strval, elem,
-				    zia_props, &zia_props->raidz.rec[1], spa,
-				    tx, "RAIDZ 1 Reconstruction") != ZIA_OK)
+			strval = fnvpair_value_string(elem);
+			if (zia_props->checksum ||
+			    zia_provider_is_off(strval)) {
+				if (zia_initialize_provider(strval, zia_props,
+				    &zia_props->raidz.rec[1], spa,
+				    "RAIDZ 1 Reconstruction") != ZIA_OK)
 					error = SET_ERROR(EINVAL);
-			}
-#ifdef _KERNEL
-			else {
+			} else {
+#if defined(_KERNEL) && defined(__linux__)
 				printk("Z.I.A. RAIDZ 1 Reconstruction "
 				    "requires checksum, but no provider "
 				    "for this task has been found.\n");
-			}
 #endif
+				error = SET_ERROR(EINVAL);
+			}
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ2_REC:
-			if (zia_props->checksum) {
-				strval = fnvpair_value_string(elem);
-				if (zia_initialize_provider(strval, elem,
-				    zia_props, &zia_props->raidz.rec[2], spa,
-				    tx, "RAIDZ 2 Reconstruction") != ZIA_OK)
+			strval = fnvpair_value_string(elem);
+			if (zia_props->checksum ||
+			    zia_provider_is_off(strval)) {
+				if (zia_initialize_provider(strval, zia_props,
+				    &zia_props->raidz.rec[2], spa,
+				    "RAIDZ 2 Reconstruction") != ZIA_OK)
 					error = SET_ERROR(EINVAL);
-			}
-#ifdef _KERNEL
-			else {
-				printk("Z.I.A. RAIDZ 2 Reconstruction"
-				    "requires checksum, but no provider"
+			} else {
+#if defined(_KERNEL) && defined(__linux__)
+				printk("Z.I.A. RAIDZ 2 Reconstruction "
+				    "requires checksum, but no provider "
 				    "for this task has been found.\n");
-			}
 #endif
+				error = SET_ERROR(EINVAL);
+			}
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ3_REC:
-			if (zia_props->checksum) {
-				strval = fnvpair_value_string(elem);
-				if (zia_initialize_provider(strval, elem,
-				    zia_props, &zia_props->raidz.rec[3], spa,
-				    tx, "RAIDZ 3 Reconstruction") != ZIA_OK)
+			strval = fnvpair_value_string(elem);
+			if (zia_props->checksum ||
+			    zia_provider_is_off(strval)) {
+				if (zia_initialize_provider(strval, zia_props,
+				    &zia_props->raidz.rec[3], spa,
+				    "RAIDZ 3 Reconstruction") != ZIA_OK)
 					error = SET_ERROR(EINVAL);
-			}
-#ifdef _KERNEL
-			else {
-				printk("Z.I.A. RAIDZ 3 Reconstruction"
-				    "requires checksum, but no provider"
+			} else {
+#if defined(_KERNEL) && defined(__linux__)
+				printk("Z.I.A. RAIDZ 3 Reconstruction "
+				    "requires checksum, but no provider "
 				    "for this task has been found.\n");
-			}
 #endif
+				error = SET_ERROR(EINVAL);
+			}
 			break;
 		case ZPOOL_PROP_ZIA_FILE_WRITE:
 			strval = fnvpair_value_string(elem);
-			if (zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->file_write, spa, tx, "File Write")
+			if (zia_initialize_provider(strval, zia_props,
+			    &zia_props->file_write, spa, "File Write")
 			    != ZIA_OK)
 				error = SET_ERROR(EINVAL);
 			break;
 		case ZPOOL_PROP_ZIA_DISK_WRITE:
 			strval = fnvpair_value_string(elem);
-			if (zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->disk_write, spa, tx, "Disk Write")
+			if (zia_initialize_provider(strval, zia_props,
+			    &zia_props->disk_write, spa, "Disk Write")
 			    != ZIA_OK)
 				error = SET_ERROR(EINVAL);
 			break;
@@ -11035,6 +11033,10 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 		case ZPOOL_PROP_ZIA_RAIDZ3_REC:
 		case ZPOOL_PROP_ZIA_FILE_WRITE:
 		case ZPOOL_PROP_ZIA_DISK_WRITE:
+			/* applied in spa_prop_validate(); only log here */
+			strval = fnvpair_value_string(elem);
+			spa_history_log_internal(spa, "set", tx,
+			    "%s=%s", nvpair_name(elem), strval);
 			break;
 		case ZPOOL_PROP_INVAL:
 			if (zpool_prop_feature(elemname)) {

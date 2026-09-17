@@ -241,8 +241,7 @@ vdev_file_io_strategy(void *arg)
 		if ((zia_props->file_write) &&
 		    (zio->io_can_offload == B_TRUE)) {
 			if (zia_offload_abd(zia_props->file_write, zio->io_abd,
-			    size, zia_props->min_offload_size,
-			    &local_offload, B_TRUE) == ZIA_OK) {
+			    size, &local_offload, B_TRUE) == ZIA_OK) {
 				err = zia_file_write(vd, zio->io_abd, size, off,
 				    vd->vdev_ashift, &resid, &err);
 			}

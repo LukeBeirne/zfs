@@ -321,6 +321,8 @@ static int zia_open_vdevs_impl(vdev_t *vd) {
 	}
 	return (ret);
 #endif
+	(void) vd;
+	return (ZIA_FALLBACK);
 }
 
 int zia_open_vdevs(vdev_t *vd) {
@@ -334,45 +336,48 @@ int zia_open_vdevs(vdev_t *vd) {
 
 	return (ret);
 #endif
-	(void) vd;
-	return (ZIA_FALLBACK);
+	/* Will return ZIA_FALLBACK */
+	return (zia_open_vdevs_impl(vd));
 }
 
-#ifdef ZIA
-int
-zia_initialize_provider(const char *strval, nvpair_t *elem,
-    zia_props_t *zia_props, void **provider, spa_t *spa,
-    dmu_tx_t *tx, const char *name)
+boolean_t
+zia_provider_is_off(const char *strval)
 {
-	(void) tx;
-	(void) elem;
-	if (strncmp(strval, "NULL", 5) == 0 ||
-	    strncmp(strval, "off", 4) == 0) {
+	return (strncmp(strval, "NULL", 5) == 0 ||
+	    strncmp(strval, "off", 4) == 0);
+}
+
+int
+zia_initialize_provider(const char *strval, zia_props_t *zia_props,
+    void **provider, spa_t *spa, const char *name)
+{
+#ifdef ZIA
+	if (zia_provider_is_off(strval)) {
 		zia_put_provider(provider,
 		    spa->spa_root_vdev);
-		return (0);
+		return (ZIA_OK);
 	}
 
 	void *new_provider = zia_get_provider(strval);
 
 	if (new_provider == NULL) {
-		return (EINVAL);
+		return (ZIA_ERROR);
 	}
 
 	if (*provider == new_provider) {
 		zia_put_provider(&new_provider,
 		    spa->spa_root_vdev);
-#ifdef _KERNEL
+#if defined(_KERNEL) && defined(__linux__)
 		printk("Provider %s already used for this task", strval);
 #endif
-		return (0);
+		return (ZIA_OK);
 	}
 
 	if (*provider != NULL)
 		zia_put_provider(provider,
 		    spa->spa_root_vdev);
 	*provider = new_provider;
-	zia_props->can_offload = !!(*provider);
+	zia_props->can_offload = !!(zia_is_used(zia_props));
 
 	/*
 	 * vdevs must be opened for the new provider
@@ -393,7 +398,7 @@ zia_initialize_provider(const char *strval, nvpair_t *elem,
 			 * but zia_disk/file_open() relies on
 			 * disk/file_write to bet set first.
 			 */
-#ifdef _KERNEL
+#if defined(_KERNEL) && defined(__linux__)
 			printk("Provider %p failed to open vdevs", *provider);
 #endif
 			zia_put_provider(provider,
@@ -402,15 +407,23 @@ zia_initialize_provider(const char *strval, nvpair_t *elem,
 		}
 	}
 
-	// spa_history_log_internal(spa, "set", tx,
-	//    "%s=%s", nvpair_name(elem), strval);
-
 	if (name != NULL) {
 		zia_prop_warn(!!(*provider), name);
 	}
 	return (ZIA_OK);
-}
 #endif
+	(void) zia_props; (void) provider; (void) spa;
+	(void) name;
+
+	/*
+	 * Without Z.I.A. there are no providers, but turning
+	 * an offload off is still valid.
+	 */
+	if (zia_provider_is_off(strval))
+		return (ZIA_OK);
+
+	return (ZIA_FALLBACK);
+}
 
 void *
 zia_get_provider(const char *name)
@@ -492,7 +505,7 @@ int
 zia_put_provider(void **provider, vdev_t *vdev)
 {
 #ifdef ZIA
-	if (!dpusm || !provider || !*provider) {
+	if (!dpusm || !provider || !*provider || !vdev) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -501,8 +514,8 @@ zia_put_provider(void **provider, vdev_t *vdev)
 	 * make sure the vdevs don't keep pointing to the invalid provider
 	 */
 	zia_props_t *props = zia_get_props(vdev->vdev_spa);
-	if (vdev && (*provider == props->disk_write ||
-	    *provider == props->file_write)) {
+	if (*provider == props->disk_write ||
+	    *provider == props->file_write) {
 		spa_vdev_state_enter(vdev->vdev_spa, SCL_NONE);
 		zia_close_vdevs(vdev);
 		(void) spa_vdev_state_exit(vdev->vdev_spa, NULL, 0);
@@ -597,13 +610,11 @@ zia_disable_offloading(zio_t *zio, boolean_t reexecute)
 }
 
 boolean_t
-zia_is_used(zio_t *zio)
+zia_is_used(zia_props_t *props)
 {
-	if (!zio) {
+	if (!props) {
 		return (B_FALSE);
 	}
-
-	zia_props_t *props = zia_get_props(zio->io_spa);
 
 	/* At least 1 operation */
 	if (props->compress ||
@@ -767,9 +778,7 @@ zia_offload_abd_offset(void *provider, abd_t *abd,
 			return (ZIA_OK);
 		}
 
-		void *abd_provider = dpusm->extract(ABD_HANDLE(abd));
-		return ((provider == abd_provider)?
-		    ZIA_OK:ZIA_PROVIDER_MISMATCH);
+		return (zia_offload_abd_between(provider, abd, size));
 	}
 
 	dpusm_pc_t *caps = NULL;
@@ -888,8 +897,9 @@ zia_offload_abd(void *provider, abd_t *abd,
 
 int
 zia_offload_abd_between(void *provider, abd_t *abd,
-    size_t size, size_t min_offload_size)
+    size_t size)
 {
+#ifdef ZIA
 	if (!dpusm || !provider) {
 		return (ZIA_FALLBACK);
 	}
@@ -898,15 +908,23 @@ zia_offload_abd_between(void *provider, abd_t *abd,
 		return (ZIA_ERROR);
 	}
 
-	void *abd_handle = ABD_HANDLE(abd);
-	void *dst_handle = zia_alloc(provider, size, min_offload_size);
+	if (!ABD_HANDLE(abd)) {
+		return (ZIA_ERROR);
+	}
 
-	if (!abd_handle || !dst_handle) {
+	if (provider == dpusm->extract(ABD_HANDLE(abd))) {
+		return (ZIA_OK);
+	}
+
+	void *src_handle = ABD_HANDLE(abd);
+	void *dst_handle = zia_alloc(provider, size);
+
+	if (!dst_handle) {
 		return (ZIA_ERROR);
 	}
 
 	dpusm_mv_t src_mv = {
-		.handle = abd_handle,
+		.handle = src_handle,
 		.offset = 0
 	};
 
@@ -918,7 +936,18 @@ zia_offload_abd_between(void *provider, abd_t *abd,
 	int rc = dpusm_to_ret(dpusm->copy.between.generic(&src_mv,
 	    &dst_mv, size));
 
+	if (rc != ZIA_OK) {
+		zia_free(&dst_handle);
+		return (rc);
+	}
+
+	ABD_HANDLE(abd) = dst_handle;
+	zia_free(&src_handle);
+
 	return (rc);
+#endif
+	(void) provider; (void) abd; (void) size;
+	return (ZIA_FALLBACK);
 }
 
 #ifdef ZIA
@@ -1166,7 +1195,7 @@ zia_compress(zia_props_t *props, enum zio_compress c,
     uint8_t level, boolean_t *local_offload)
 {
 #ifdef ZIA
-	if (!dpusm || !props->provider) {
+	if (!dpusm || !props->compress) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -1211,7 +1240,7 @@ zia_decompress(zia_props_t *props, enum zio_compress c,
 	}
 
 	int ret = zia_offload_abd(props->decompress, src,
-	    s_len, props->min_offload_size, NULL, B_FALSE);
+	    s_len, NULL, B_FALSE);
 	if (ret != ZIA_OK) {
 		return (ret);
 	}
@@ -1221,7 +1250,8 @@ zia_decompress(zia_props_t *props, enum zio_compress c,
 	 *
 	 * a lot of these will fail because d_len tends to be small
 	 */
-	ABD_HANDLE(dst) = zia_alloc(props->decompress, d_len);
+	void *handle = zia_alloc(props->decompress, d_len);
+	ABD_HANDLE(dst) = handle;
 	if (!ABD_HANDLE(dst)) {
 		/* let abd_free clean up zio->io_abd */
 		return (ZIA_ERROR);
@@ -1273,14 +1303,13 @@ zia_checksum_compute(void *provider, zio_cksum_t *dst, enum zio_checksum alg,
 		}
 
 		int rc = zia_offload_abd(provider, zio->io_abd, size,
-		    zia_get_props(zio->io_spa)->min_offload_size,
 		    local_offload, B_FALSE);
 		if (rc != ZIA_OK) {
 			return (ZIA_ERROR);
 		}
 	} else {
 		int ret = zia_offload_abd_between(provider, zio->io_abd,
-		    size, zia_get_props(zio->io_spa)->min_offload_size);
+		    size);
 		if (ret != ZIA_OK) {
 			return (ret);
 		}
@@ -1298,11 +1327,11 @@ zia_checksum_compute(void *provider, zio_cksum_t *dst, enum zio_checksum alg,
 }
 
 int
-zia_checksum_error(enum zio_checksum alg, abd_t *abd,
+zia_checksum_error(void *provider, enum zio_checksum alg, abd_t *abd,
     uint64_t size, int byteswap, zio_cksum_t *actual_cksum)
 {
 #ifdef ZIA
-	if (!dpusm) {
+	if (!dpusm || !provider) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -1314,15 +1343,52 @@ zia_checksum_error(enum zio_checksum alg, abd_t *abd,
 		return (ZIA_FALLBACK);
 	}
 
+	/*
+	 * Checksum a copy instead of moving the handle, because RAIDZ
+	 * columns may still reference the original handle.
+	 */
+	void *handle = ABD_HANDLE(abd);
+	void *copy = NULL;
+	if (provider != dpusm->extract(handle)) {
+		copy = zia_alloc(provider, size);
+		if (!copy) {
+			return (ZIA_ERROR);
+		}
+
+		dpusm_mv_t src_mv = {
+			.handle = handle,
+			.offset = 0
+		};
+
+		dpusm_mv_t dst_mv = {
+			.handle = copy,
+			.offset = 0
+		};
+
+		if (dpusm->copy.between.generic(&src_mv, &dst_mv,
+		    size) != DPUSM_OK) {
+			zia_free(&copy);
+			return (ZIA_ERROR);
+		}
+
+		handle = copy;
+	}
+
 	const dpusm_checksum_byteorder_t byteorder =
 	    byteorder_to_dpusm(byteswap);
 
-	return (dpusm_to_ret(dpusm->checksum(checksum_to_dpusm(alg),
-	    byteorder, ABD_HANDLE(abd), size, actual_cksum->zc_word,
-	    sizeof (actual_cksum->zc_word))));
+	const int ret = dpusm_to_ret(dpusm->checksum(checksum_to_dpusm(alg),
+	    byteorder, handle, size, actual_cksum->zc_word,
+	    sizeof (actual_cksum->zc_word)));
+
+	if (copy) {
+		zia_free(&copy);
+	}
+
+	return (ret);
 #else
-	(void) alg; (void) abd; (void) size;
-	(void) byteswap; (void) actual_cksum;
+	(void) provider; (void) alg; (void) abd;
+	(void) size; (void) byteswap; (void) actual_cksum;
 	return (ZIA_FALLBACK);
 #endif
 }
@@ -1332,6 +1398,13 @@ static boolean_t
 zia_can_raidz(raidz_row_t *rr, zia_props_t *props, uint64_t raidn,
     boolean_t rec, uint_t cksum, size_t *col_sizes)
 {
+	void *provider = rec == B_TRUE ?
+	    props->raidz.rec[raidn] :
+	    props->raidz.gen[raidn];
+	if (!provider) {
+		return (B_FALSE);
+	}
+
 	/*
 	 * generation is needed for both
 	 * generation and reconstruction
@@ -1344,13 +1417,13 @@ zia_can_raidz(raidz_row_t *rr, zia_props_t *props, uint64_t raidn,
 		 * the provider knows whether or not
 		 * raidz functions are available
 		 */
-	    (dpusm->raid.can_compute(props->raidz.gen[raidn], raidn,
+	    (dpusm->raid.can_compute(provider, raidn,
 	    rr->rr_cols - rr->rr_firstdatacol,
 	    col_sizes, rec == B_TRUE) == DPUSM_OK));
 
 	if (good && (rec == B_TRUE)) {
 		dpusm_pc_t *caps = NULL;
-		if (zia_get_capabilities(props->raidz.gen[raidn],
+		if (zia_get_capabilities(props->checksum,
 		    &caps) != ZIA_OK) {
 			return (B_FALSE);
 		}
@@ -1431,9 +1504,6 @@ zia_raidz_alloc(zio_t *zio, raidz_row_t *rr, boolean_t rec,
 	}
 
 	zia_props_t *props = zia_get_props(zio->io_spa);
-	if (!props->provider) {
-		return (ZIA_FALLBACK);
-	}
 
 	/* get column sizes */
 	const size_t column_sizes_size = sizeof (size_t) * rr->rr_cols;
@@ -1451,8 +1521,13 @@ zia_raidz_alloc(zio_t *zio, raidz_row_t *rr, boolean_t rec,
 	}
 	kmem_free(column_sizes, column_sizes_size);
 
-	// TODO RAIDZ which raidz provider to use here?
-	void *provider = rec == B_TRUE ? props->raidz.rec[raidn] :
+	/*
+	 * The row stays on this provider until it is freed. Its data
+	 * columns reference zio->io_abd's handle, so moving the row
+	 * would mean rebuilding every column.
+	 */
+	void *provider = rec == B_TRUE ?
+	    props->raidz.rec[raidn] :
 	    props->raidz.gen[raidn];
 	if (!provider) {
 		return (ZIA_FALLBACK);
@@ -1465,14 +1540,8 @@ zia_raidz_alloc(zio_t *zio, raidz_row_t *rr, boolean_t rec,
 	 * abds hitting raidz might have been mirrored
 	 */
 	int ret = ZIA_OK;
-	if (!ABD_HANDLE(zio->io_abd)) {
-		ret = zia_offload_abd(provider, zio->io_abd,
-		    zio->io_size, props->min_offload_size,
-		    local_offload, B_TRUE);
-	} else {
-		ret = zia_offload_abd_between(provider, zio->io_abd,
-		    zio->io_size, props->min_offload_size);
-	}
+	ret = zia_offload_abd(provider, zio->io_abd,
+	    zio->io_size, local_offload, B_TRUE);
 	if (ret != ZIA_OK) {
 		return (ret);
 	}
@@ -1687,9 +1756,12 @@ zia_raidz_new_parity(zio_t *zio, raidz_row_t *rr, uint64_t c)
 		return (ZIA_FALLBACK);
 	}
 
-	// TODO RAIDZ which raidz provider to use here?
-	zia_props_t *props = zia_get_props(zio->io_spa);
-	void *provider = props->raidz.gen[rr->rr_firstdatacol];
+	/*
+	 * New parity must be on the row's provider. DPUSM only
+	 * allocates a RAID context on a provider that can generate
+	 * parity for this width.
+	 */
+	void *provider = dpusm->extract(rr->rr_zia_handle);
 	if (!provider) {
 		return (ZIA_FALLBACK);
 	}
@@ -1942,8 +2014,7 @@ zia_disk_write(vdev_t *vdev, zio_t *zio, int flags, boolean_t *local_offload)
 	}
 
 	if (zia_offload_abd(props->disk_write, zio->io_abd,
-	    zio->io_size, props->min_offload_size,
-	    local_offload, B_TRUE) != ZIA_OK) {
+	    zio->io_size, local_offload, B_TRUE) != ZIA_OK) {
 		return (EIO);
 	}
 

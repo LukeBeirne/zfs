@@ -534,8 +534,8 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 		int error = ZIA_FALLBACK;
 		if ((zia_props->can_offload == B_TRUE) &&
 		    (zia_props->checksum)) {
-			error = zia_checksum_error(checksum, abd, size,
-			    byteswap, &actual_cksum);
+			error = zia_checksum_error(zia_props->checksum,
+			    checksum, abd, size, byteswap, &actual_cksum);
 		}
 
 		/* fall back to ZFS implementation */
