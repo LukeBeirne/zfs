@@ -1033,10 +1033,10 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ1_GEN:
 			strval = fnvpair_value_string(elem);
-			if ((error = zia_initialize_provider(strval, elem, zia_props,
-			    &zia_props->raidz.gen[1], spa, tx,
-			    "RAIDZ 1 Generation")) != ZIA_OK) {
-				error = SET_ERROR(error);
+			if (zia_initialize_provider(strval, elem,
+			    zia_props, &zia_props->raidz.gen[1], spa, tx,
+			    "RAIDZ 1 Generation") != ZIA_OK) {
+				error = SET_ERROR(EINVAL);
 			}
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ2_GEN:
@@ -1060,14 +1060,14 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				    zia_props, &zia_props->raidz.rec[1], spa,
 				    tx, "RAIDZ 1 Reconstruction") != ZIA_OK)
 					error = SET_ERROR(EINVAL);
-			}
-#ifdef _KERNEL
-			else {
+			} else {
+#if defined(_KERNEL) && defined(__linux__)
 				printk("Z.I.A. RAIDZ 1 Reconstruction "
 				    "requires checksum, but no provider "
 				    "for this task has been found.\n");
-			}
 #endif
+				error = SET_ERROR(EINVAL);
+			}
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ2_REC:
 			if (zia_props->checksum) {
@@ -1076,14 +1076,14 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				    zia_props, &zia_props->raidz.rec[2], spa,
 				    tx, "RAIDZ 2 Reconstruction") != ZIA_OK)
 					error = SET_ERROR(EINVAL);
-			}
-#ifdef _KERNEL
-			else {
+			} else {
+#if defined(_KERNEL) && defined(__linux__)
 				printk("Z.I.A. RAIDZ 2 Reconstruction"
 				    "requires checksum, but no provider"
 				    "for this task has been found.\n");
-			}
 #endif
+				error = SET_ERROR(EINVAL);
+			}
 			break;
 		case ZPOOL_PROP_ZIA_RAIDZ3_REC:
 			if (zia_props->checksum) {
@@ -1092,14 +1092,14 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				    zia_props, &zia_props->raidz.rec[3], spa,
 				    tx, "RAIDZ 3 Reconstruction") != ZIA_OK)
 					error = SET_ERROR(EINVAL);
-			}
-#ifdef _KERNEL
-			else {
+			} else {
+#if defined(_KERNEL) && defined(__linux__)
 				printk("Z.I.A. RAIDZ 3 Reconstruction"
 				    "requires checksum, but no provider"
 				    "for this task has been found.\n");
-			}
 #endif
+				error = SET_ERROR(EINVAL);
+			}
 			break;
 		case ZPOOL_PROP_ZIA_FILE_WRITE:
 			strval = fnvpair_value_string(elem);
