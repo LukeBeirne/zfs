@@ -58,7 +58,18 @@
 #include <sys/zio_compress.h>
 
 /* ******************************************************** */
-/* return values */
+/*
+ * return values
+ *
+ * Z.I.A. is normally compiled in but not attached to an accelerator,
+ * so these must keep that case cheap and safe. When no accelerator is
+ * attached (or no provider is selected) and nothing is offloaded,
+ * functions return ZIA_FALLBACK, ZIA_ERROR or ZIA_DISABLED, and never
+ * ZIA_ACCELERATOR_DOWN. Callers restart the zio pipeline only on
+ * ZIA_ACCELERATOR_DOWN, or after an onload of a real handle fails.
+ * Offloaded handles are never left behind when Z.I.A. cannot reach
+ * them, so a restarted zio runs entirely in software.
+ */
 #define	ZIA_OK 1000
 
 /* something bad happened not related to missing functionality */
@@ -82,7 +93,7 @@
 #define	ZIA_ACCELERATOR_DOWN 1005
 /* ******************************************************** */
 
-/* DPUSM was not found by configure */
+/* ZFS was built without Z.I.A. (--disable-zia) */
 #define	ZIA_DISABLED 1006
 
 /*
@@ -115,6 +126,9 @@ void zia_prop_warn(boolean_t val, const char *name);
 int zia_init(void);
 int zia_fini(void);
 
+/* whether an accelerator interface is registered (see sys/zia_ops.h) */
+boolean_t zia_is_attached(void);
+
 void zia_open_vdevs(vdev_t *vd);
 void *zia_get_provider(const char *name);
 const char *zia_get_provider_name(void *provider);
@@ -144,9 +158,6 @@ void *zia_alloc(void *provider, size_t size);
 
 /* deallocate handle without onloading */
 int zia_free(void **handle);
-
-/* move linear data between from the offloader to memory */
-int zia_onload(void **handle, void *buf, size_t size);
 
 /* calls abd_iterate_func on the abd to copy abd data back and forth */
 int zia_offload_abd(void *provider, abd_t *abd,

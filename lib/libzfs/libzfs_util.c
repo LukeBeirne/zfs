@@ -317,7 +317,8 @@ libzfs_error_description(libzfs_handle_t *hdl)
 		return ("kernel was built without "
 		    "user namespace support (CONFIG_USER_NS)");
 	case EZFS_ZIA_NONEXISTENT_PROVIDER:
-		return ("given provider does not exist");
+		return ("given provider does not exist or no accelerator "
+		    "interface is attached (see zia_available)");
 	case EZFS_UNKNOWN:
 		return ("unknown error");
 	default:

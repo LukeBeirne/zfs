@@ -564,19 +564,25 @@ endef
 $(foreach target,$(z_cdirs), $(eval $(call ZKMOD_C_O_MAKE_TARGET,$(target))))
 $(foreach target,$(z_sdirs), $(eval $(call ZKMOD_S_O_MAKE_TARGET,$(target))))
 
-# DPUSM TODO
-ifneq ("@DPUSM_SYMBOLS@","")
-obj-$(CONFIG_ZFS) += zia-software-provider.o
+# Optional Z.I.A. modules that use the DPUSM: the zia-dpusm bridge and the
+# example software provider. They are only built when DPUSM names a DPUSM
+# build directory (with include/ and Module.symvers), from either
+# "./configure --with-zia=PATH" or "make zia-modules DPUSM=PATH". The zfs
+# module itself never needs the DPUSM. Both modules use symbols exported by
+# zfs.ko, which is built in this same directory.
+ifneq ($(DPUSM),)
+obj-$(CONFIG_ZFS) += zia-dpusm.o zia-software-provider.o
 
-ZIA_SOFTWARE_PROVIDER_OBJS := \
-	provider.o \
-	kernel_offloader.o
+zia-dpusm-objs := zia-dpusm/zia_dpusm.o
+zia-software-provider-objs := \
+	zia-software-provider/provider.o \
+	zia-software-provider/kernel_offloader.o
 
-zia-software-provider-objs += $(addprefix zia-software-provider/,$(ZIA_SOFTWARE_PROVIDER_OBJS))
-# zfs_file_os does not have any dependencies, so just link to it directly
-zia-software-provider-objs += os/linux/zfs/zfs_file_os.o
+$(addprefix $(obj)/,$(zia-dpusm-objs) $(zia-software-provider-objs)) : \
+	ccflags-y += -I$(DPUSM)/include -I$(src)/zia-software-provider
 
-$(addprefix $(obj)/zia-software-provider/,$(ZIA_SOFTWARE_PROVIDER_OBJS)) : ccflags-y += -I@abs_top_builddir@ $(ZFS_MODULE_CFLAGS) -I@abs_srcdir@/zia-software-provider/ -I@DPUSM_ROOT@/include
+$(foreach target,zia-dpusm/ zia-software-provider/, \
+	$(eval $(call ZKMOD_C_O_MAKE_TARGET,$(target))))
 
-@ZIA_ENABLED_TRUE@KBUILD_EXTRA_SYMBOLS += @DPUSM_SYMBOLS@
+KBUILD_EXTRA_SYMBOLS += $(DPUSM)/Module.symvers
 endif

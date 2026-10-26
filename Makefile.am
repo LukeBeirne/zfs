@@ -44,6 +44,7 @@ dist_noinst_DATA += autogen.sh copy-builtin
 dist_noinst_DATA += AUTHORS CODE_OF_CONDUCT.md COPYRIGHT LICENSE META NEWS NOTICE
 dist_noinst_DATA += README.md RELEASES.md
 dist_noinst_DATA += module/lua/README.zfs module/os/linux/spl/README.md
+dist_noinst_DATA += module/zia-dpusm/README.md
 
 # Include all the extra licensing information for modules
 dist_noinst_DATA += module/icp/algs/skein/THIRDPARTYLICENSE
@@ -103,6 +104,10 @@ clean-local: $(CLEAN_LOCAL)
 
 PHONY += $(ALL_LOCAL)
 all-local: $(ALL_LOCAL)
+
+PHONY += zia-modules
+zia-modules:
+	$(MAKE) -C module zia-modules $(if $(DPUSM),DPUSM="$(abspath $(DPUSM))")
 
 dist-hook:
 	$(top_srcdir)/scripts/make_gitrev.sh -D $(distdir) $(GITREV)

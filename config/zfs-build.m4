@@ -436,8 +436,10 @@ AC_DEFUN([ZFS_AC_RPM], [
 		AC_MSG_RESULT([no])
 	])
 
-	AS_IF([test "x$enable_zia" = xyes], [
-		RPM_DEFINE_COMMON=${RPM_DEFINE_COMMON}' --define "$(WITH_ZIA) 1" --define "DPUSM_ROOT $(DPUSM_ROOT)"'
+	dnl # _with_zia or _without_zia, for "%bcond_without zia" in the specs
+	RPM_DEFINE_COMMON=${RPM_DEFINE_COMMON}' --define "$(WITH_ZIA) 1"'
+	AS_IF([test "x$DPUSM_ROOT" != x], [
+		RPM_DEFINE_COMMON=${RPM_DEFINE_COMMON}' --define "DPUSM_ROOT $(DPUSM_ROOT)"'
 	])
 
 	RPM_DEFINE_UTIL=' --define "_initconfdir $(initconfdir)"'

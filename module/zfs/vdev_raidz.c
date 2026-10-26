@@ -3762,8 +3762,13 @@ raidz_reconstruct(zio_t *zio, int *ltgts, int ntgts, int nparity)
 					    B_FALSE, B_TRUE));
 				}
 
-				if ((ret != ZIA_OK) &&
-				    (ret != ZIA_ACCELERATOR_DOWN)) {
+				/*
+				 * The columns are back in memory but were
+				 * not reconstructed, so reconstruct them
+				 * in software unless the accelerator went
+				 * down and the onload failed.
+				 */
+				if (ret != ZIA_ACCELERATOR_DOWN) {
 					vdev_raidz_reconstruct_row(rm, rr,
 					    my_tgts, t);
 				}

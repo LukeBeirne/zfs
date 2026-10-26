@@ -32,41 +32,79 @@ function zia_available
     zpool get -H -o value zia_available "${TESTPOOL}"
 }
 
+function module_loaded # <module name>
+{
+    lsmod | awk '{ print $1 }' | grep -qx "$1"
+}
+
 function dpusm_loaded
 {
-    if [[ "$(zia_available)" == "yes" ]]
+    module_loaded "${DPUSM_MODULE}"
+}
+
+# The bridge and the example provider are only built with
+# "make zia-modules DPUSM=<DPUSM build>". Use them from the build tree,
+# or installed ones through modprobe.
+function zia_module_available # <module file name>
+{
+    [[ -f "${SBIN_DIR}/module/$1.ko" ]] || modprobe -n -q "$1"
+}
+
+function zia_load_module # <module file name> <module name>
+{
+    if module_loaded "$2"
     then
-        lsmod | grep dpusm > /dev/null
-        ret="$?"
-        if [[ "${ret}" != "0" ]]
-        then
-            log_unsupported "dpusm not loaded"
-        fi
+        return 0
+    fi
+
+    if [[ -f "${SBIN_DIR}/module/$1.ko" ]]
+    then
+        insmod "${SBIN_DIR}/module/$1.ko"
+    else
+        modprobe "$1"
     fi
 }
 
-# Providers can be loaded at any time after the dpusm
+function zia_unload_module # <module name>
+{
+    if module_loaded "$1"
+    then
+        rmmod "$1"
+    fi
+}
+
+# Load order: ZFS and the DPUSM (either order), then DPUSM providers and
+# the zia-dpusm bridge, which attaches Z.I.A. to the DPUSM.
 #
-# The software provider must be loaded after ZFS since
-# it uses ZFS symbols.
-#
-# If Z.I.A. is not available, the tests should still pass
-#
+# Without the DPUSM or the Z.I.A. modules, the tests run against ZFS
+# alone: all Z.I.A. properties can still be set, and every operation
+# must fall back to ZFS.
 function load_provider
 {
-    if [[ "$(zia_available)" == "yes" ]]
+    if ! dpusm_loaded || \
+       ! zia_module_available "${PROVIDER}" || \
+       ! zia_module_available "${BRIDGE}"
     then
-        log_must insmod "${SBIN_DIR}/module/${PROVIDER}.ko"
-        log_must zpool set zia_provider="${PROVIDER_MODULE}" "${TESTPOOL}"
+        log_note "DPUSM or Z.I.A. modules not available;" \
+            "running without an accelerator"
+        return 0
     fi
+
+    log_must zia_load_module "${PROVIDER}" "${PROVIDER_MODULE}"
+    log_must zia_load_module "${BRIDGE}" "${BRIDGE_MODULE}"
+    log_must test "$(zia_available)" = "yes"
+    log_must zpool set zia_provider="${PROVIDER_MODULE}" "${TESTPOOL}"
 }
 
+# The bridge cannot be unloaded while a pool holds a provider, and the
+# provider cannot be unloaded while Z.I.A. holds it.
 function unload_provider
 {
     if [[ "$(zia_available)" == "yes" ]]
     then
-        log_must zpool set zia_provider="NULL" "${TESTPOOL}"
-        log_must rmmod "${PROVIDER_MODULE}"
+        log_must zpool set zia_provider="off" "${TESTPOOL}"
+        log_must zia_unload_module "${BRIDGE_MODULE}"
+        log_must zia_unload_module "${PROVIDER_MODULE}"
     fi
 }
 

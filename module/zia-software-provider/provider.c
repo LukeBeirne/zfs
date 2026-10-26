@@ -78,18 +78,31 @@
  * or have access to, pointers returned from the kernel offloader are
  * masked with a random value.
  *
- * Note that this provider has to be loaded after ZFS because it
- * depends on ZFS for its "offload" functionality.
+ * This is an ordinary DPUSM provider: it knows nothing about Z.I.A.
+ * Z.I.A. reaches it through the DPUSM once the zia-dpusm bridge module
+ * is loaded. It has to be loaded after ZFS because the kernel
+ * offloader depends on ZFS for its "offload" functionality.
  *
  * Usage:
- *     1. Reconfigure ZFS with --with-zia=<DPUSM root>
+ *     1. Build ZFS (Z.I.A. is enabled by default; no DPUSM is needed),
+ *        build the DPUSM, then build this provider and the bridge with
+ *            make zia-modules DPUSM=<DPUSM build directory>
  *
- *     2. Create a zpool
+ *     2. Load the modules (zfs and dpusm may be loaded in either order)
+ *            modprobe zfs
+ *            insmod <DPUSM>/dpusm.ko
+ *            insmod module/zia-software-provider.ko
+ *            insmod module/zia-dpusm.ko
+ *        (or modprobe zia-software-provider zia-dpusm after
+ *        "make install")
  *
- *     3. Select this provider with
- *            zpool set zia_provider=zia-software-provider <zpool>
+ *     3. Create a zpool
  *
- *     4. Enable "offloading" of operations with
+ *     4. Select this provider with
+ *            zpool set zia_provider=zia_software_provider <zpool>
+ *        ("zia-software-provider" is accepted too)
+ *
+ *     5. Enable "offloading" of operations with
  *            zpool set zia_compress=on   <zpool>
  *            zpool set zia_decompress=on <zpool>
  *            zpool set zia_checksum=on   <zpool>
@@ -102,7 +115,7 @@
  *            zpool set zia_file_write=on <zpool>
  *            zpool set zia_disk_write=on <zpool>
  *
- *     5. Use the zpool as you would normally
+ *     6. Use the zpool as you would normally
  *
  *     Notes:
  *         If a ZFS IO stage is not run, enabling a Z.I.A. offload
@@ -118,6 +131,12 @@
  *         in memory. To avoid the cost of offloading data only to
  *         fail, a check has been inserted to prevent offloading
  *         altogether if zia_checksum is not enabled.
+ *
+ *         zia_provider is not stored in the pool. Set it again
+ *         after importing the pool. To unload the modules, first
+ *         run "zpool set zia_provider=off" on every pool using
+ *         this provider, then unload zia-dpusm, this provider, and
+ *         the DPUSM.
  */
 
 #include <linux/init.h>
@@ -496,7 +515,13 @@ sw_provider_init(void)
 	/* "accelerator" API initialization */
 	kernel_offloader_init();
 
-	return (dpusm_register_bsd(THIS_MODULE, &sw_provider_functions));
+	/* returns 0 or a negative errno */
+	const int ret = dpusm_register_bsd(THIS_MODULE,
+	    &sw_provider_functions);
+	if (ret != 0)
+		kernel_offloader_fini();
+
+	return (ret);
 }
 
 static void __exit

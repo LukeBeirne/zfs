@@ -55,21 +55,20 @@
 #include <sys/zio.h>
 #include <sys/zio_compress.h>
 #include <sys/zio_checksum.h>
+#include <sys/zia_ops.h>
 
 #define	ABD_HANDLE(abd) (abd)->abd_zia_handle
 
 #define	VDEV_HANDLE(vdev) (vdev)->vdev_zia_handle
 
 int
-dpusm_to_ret(const int dpusm_ret);
+zia_ops_to_ret(const int ops_ret);
 
 #ifdef ZIA
-#include <dpusm/user_api.h>
+zia_compress_t
+compress_to_zia(enum zio_compress c);
 
-dpusm_compress_t
-compress_to_dpusm(enum zio_compress c);
-
-int zia_get_capabilities(void *provider, dpusm_pc_t **caps);
+int zia_get_capabilities(void *provider, zia_caps_t *caps);
 
 #endif /* ZIA */
 

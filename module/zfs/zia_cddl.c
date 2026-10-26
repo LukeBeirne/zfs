@@ -22,7 +22,7 @@
 
 /* basically a duplicate of zio_compress_data */
 int
-zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
+zia_compress_impl(const zia_ops_t *zia_ops, zia_props_t *props,
     enum zio_compress c, abd_t *src, size_t s_len,
     abd_t **dst, void **cbuf_handle, uint64_t *c_len,
     uint8_t level, boolean_t *local_offload)
@@ -52,9 +52,9 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 		}
 
 		/* check that compression can be done before offloading */
-		dpusm_pc_t *caps = NULL;
+		zia_caps_t caps;
 		if ((zia_get_capabilities(props->provider, &caps) != ZIA_OK) ||
-		    !(caps->compress & compress_to_dpusm(c))) {
+		    !(caps.compress & compress_to_zia(c))) {
 			return (ZIA_FALLBACK);
 		}
 
@@ -65,18 +65,18 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 		}
 	} else {
 		/* came in offloaded */
-		void *old_provider = dpusm->extract(ABD_HANDLE(src));
+		void *old_provider = zia_ops->extract(ABD_HANDLE(src));
 		if (old_provider != props->provider) {
 			return (ZIA_PROVIDER_MISMATCH);
 		}
 
 		/* use provider to check for zero buffer */
-		ret = dpusm->all_zeros(ABD_HANDLE(src), 0, s_len);
-		if (ret == DPUSM_OK) {
+		ret = zia_ops->all_zeros(ABD_HANDLE(src), 0, s_len);
+		if (ret == ZIA_OPS_OK) {
 			*c_len = 0;
 			return (ZIA_OK);
-		} else if (ret != DPUSM_BAD_RESULT) {
-			return (dpusm_to_ret(ret));
+		} else if (ret != ZIA_OPS_BAD_RESULT) {
+			return (zia_ops_to_ret(ret));
 		}
 
 		if (c == ZIO_COMPRESS_EMPTY) {
@@ -84,13 +84,13 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 			return (ZIA_OK);
 		}
 
-		dpusm_pc_t *caps = NULL;
+		zia_caps_t caps;
 		ret = zia_get_capabilities(props->provider, &caps);
 		if (ret != ZIA_OK) {
 			return (ret);
 		}
 
-		if (!(caps->compress & compress_to_dpusm(c))) {
+		if (!(caps.compress & compress_to_zia(c))) {
 			return (ZIA_FALLBACK);
 		}
 	}
@@ -127,16 +127,16 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 	 * association wasn't completed, it'll still work normally
 	 */
 	if (abd_is_linear(*dst) == B_TRUE) {
-		dpusm->associate_handle(*cbuf_handle, ABD_LINEAR_BUF(*dst));
+		zia_ops->associate_handle(*cbuf_handle, ABD_LINEAR_BUF(*dst));
 	}
 
-	/* DPUSM interface takes in a size_t, not a uint64_t */
+	/* zia_ops interface takes in a size_t, not a uint64_t */
 	size_t zia_c_len = (size_t)s_len;
-	ret = dpusm->compress(compress_to_dpusm(c), (int8_t)complevel,
+	ret = zia_ops->compress(compress_to_zia(c), (int8_t)complevel,
 	    ABD_HANDLE(src), s_len, *cbuf_handle, &zia_c_len);
-	if (ret != DPUSM_OK) {
+	if (ret != ZIA_OPS_OK) {
 		zia_free(cbuf_handle);
-		return (dpusm_to_ret(ret));
+		return (zia_ops_to_ret(ret));
 	}
 
 	*c_len = zia_c_len;
@@ -154,7 +154,7 @@ zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
 }
 
 int
-zia_raidz_rec_impl(const dpusm_uf_t *dpusm,
+zia_raidz_rec_impl(const zia_ops_t *zia_ops,
     raidz_row_t *rr, int *t, int nt)
 {
 	int tgts[VDEV_RAIDZ_MAXPARITY];
@@ -170,7 +170,7 @@ zia_raidz_rec_impl(const dpusm_uf_t *dpusm,
 
 	ASSERT(ntgts >= nt);
 
-	return (dpusm->raid.rec(rr->rr_zia_handle,
+	return (zia_ops->raid.rec(rr->rr_zia_handle,
 	    tgts, ntgts));
 }
 

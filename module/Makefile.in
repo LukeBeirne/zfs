@@ -1,3 +1,8 @@
+# DPUSM build directory for the optional zia-dpusm and zia-software-provider
+# modules (see Kbuild). Defaults to "./configure --with-zia=PATH"; leave
+# empty to build only the core modules.
+DPUSM ?= @DPUSM_ROOT@
+
 include Kbuild
 
 INSTALL_MOD_DIR ?= extra
@@ -9,8 +14,26 @@ install: modules_install data_install
 uninstall: modules_uninstall data_uninstall
 check:
 
+# Build the core modules plus the DPUSM bridge and example provider.
+zia-modules:
+	@test -n "$(DPUSM)" || { \
+		echo "zia-modules: set DPUSM=<DPUSM build directory>" \
+		    "or configure --with-zia=<DPUSM build directory>" >&2; \
+		exit 1; }
+	+$(MAKE) modules DPUSM="$(DPUSM)"
+
+zia-check-dpusm:
+	@test -r "$(DPUSM)/include/dpusm/user_api.h" || { \
+		echo "DPUSM=$(DPUSM): missing include/dpusm/user_api.h" >&2; \
+		exit 1; }
+	@test -r "$(DPUSM)/Module.symvers" || { \
+		echo "DPUSM=$(DPUSM): missing Module.symvers;" \
+		    "build the DPUSM first" >&2; \
+		exit 1; }
+
 .PHONY: all distclean maintainer-clean install uninstall check distdir gitrev \
 	modules modules-Linux modules-FreeBSD modules-unknown \
+	zia-modules zia-check-dpusm \
 	clean clean-Linux clean-FreeBSD \
 	modules_install modules_install-Linux modules_install-FreeBSD \
 	data_install data_install-Linux data_install-FreeBSD \
@@ -54,7 +77,7 @@ FMAKE = env -u MAKEFLAGS make $(FMAKEFLAGS)
 gitrev:
 	$(MAKE) -C "@abs_top_builddir@" gitrev
 
-modules-Linux: gitrev
+modules-Linux: gitrev $(if $(DPUSM),zia-check-dpusm)
 	mkdir -p $(sort $(dir $(spl-objs) $(spl-)))
 	mkdir -p $(sort $(dir $(zfs-objs) $(zfs-)))
 	# Pre-6.10 kernel builds didn't need to copy over the source files to the
@@ -70,7 +93,8 @@ modules-Linux: gitrev
 		$(if @KERNEL_CROSS_COMPILE@,CROSS_COMPILE=@KERNEL_CROSS_COMPILE@) \
 		$(if @KERNEL_ARCH@,ARCH=@KERNEL_ARCH@) \
 		$(if @OBJTOOL_DISABLE_WERROR@,objtool=@abs_top_builddir@/scripts/objtool-wrapper) \
-		M="$$PWD" @KERNEL_MAKE@ CONFIG_ZFS=m modules
+		M="$$PWD" @KERNEL_MAKE@ CONFIG_ZFS=m \
+		$(if $(DPUSM),DPUSM="$(abspath $(DPUSM))") modules
 
 modules-FreeBSD: gitrev
 	+$(FMAKE)
@@ -140,7 +164,7 @@ data_install: data_install-@ac_system@
 
 modules_uninstall-Linux: modules_uninstall-Linux-legacy
 	@# Uninstall the kernel modules
-	$(RM) $(addprefix $(KMODDIR)/$(INSTALL_MOD_DIR)/,zfs.ko spl.ko zia-software-provider)
+	$(RM) $(addprefix $(KMODDIR)/$(INSTALL_MOD_DIR)/,zfs.ko spl.ko zia-dpusm.ko zia-software-provider.ko)
 
 modules_uninstall-FreeBSD:
 	@false
@@ -170,7 +194,8 @@ cppcheck-Linux:
 		-I @top_srcdir@/include/os/linux/spl \
 		-I @top_srcdir@/include/os/linux/zfs \
 		-I @top_srcdir@/include \
-		avl icp $(lua_dir) nvpair unicode zcommon zfs zstd os/linux zia-software-provider
+		avl icp $(lua_dir) nvpair unicode zcommon zfs zstd os/linux \
+		zia-dpusm zia-software-provider
 
 cppcheck-FreeBSD:
 	@true

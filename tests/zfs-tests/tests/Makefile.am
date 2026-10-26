@@ -2639,4 +2639,5 @@ nobase_dist_datadir_zfs_tests_tests_SCRIPTS += \
 	functional/zia/setup.ksh \
 	functional/zia/zia_props.ksh \
 	functional/zia/zia_raidz_resilver.ksh \
+	functional/zia/zia_unattached.ksh \
 	functional/zia/zia_write_pipeline.ksh

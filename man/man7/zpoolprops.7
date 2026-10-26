@@ -209,6 +209,14 @@ ratio.
 .Sy used
 is a heuristic for allocation and should not be interpreted as an exact measure
 of used space.
+.It Sy zia_available
+.Sy yes
+if an accelerator interface is attached to the ZFS Interface for Accelerators
+(Z.I.A.), otherwise
+.Sy no .
+Z.I.A. is attached at runtime by loading a bridge module, such as
+.Sy zia-dpusm
+for the Data Processing Unit Services Module (DPUSM).
 .El
 .Pp
 The space usage properties report actual physical space available to the
@@ -650,10 +658,23 @@ Controls whether the pool should offload decompression.
 Controls whether a pool should offload write I/Os to disks.
 .It Sy zia_file_write Ns = Ns Sy on Ns | Ns Sy off
 Controls whether a pool should offload write I/Os to files.
-.It Sy zia_provider Ns = Ns Sy (unset) | Ns Sy Z.I.A. Provider Name
+.It Sy zia_provider Ns = Ns Sy (unset) | Ns Sy off | Ns Ar provider
 Selects an accelerator registered in the Data Processing Unit Services
-Module to offload data to.
+Module to offload data to, or
+.Sy off
+to stop using one.
 Only one accelerator can be used by a pool at a time.
+Setting a provider fails unless
+.Sy zia_available
+is
+.Sy yes
+and the provider is loaded; providers are never loaded on demand.
+DPUSM providers are named after their kernel module, e.g.
+.Sy zia_software_provider .
+This property is not stored in the pool and has to be set again after the
+pool is imported.
+While a pool uses a provider, the provider and the bridge module cannot be
+unloaded.
 .It Sy zia_raidz1_gen Ns = Ns Sy on Ns | Ns Sy off
 Controls whether the pool should offload RAIDZ1 parity generation.
 Does not have any effect if RAIDZ1 is disabled.

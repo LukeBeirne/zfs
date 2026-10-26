@@ -1,5 +1,6 @@
 %bcond_with     debug
 %bcond_with     debuginfo
+%bcond_without  zia
 
 Name:           @PACKAGE@-kmod
 Version:        @VERSION@
@@ -60,9 +61,9 @@ fi
 %endif
 
 %if %{with zia}
-%define zia --with-zia="%{?DPUSM_ROOT}"
+%define zia --enable-zia %{?DPUSM_ROOT:--with-zia="%{DPUSM_ROOT}"}
 %else
-%define zia --without-zia
+%define zia --disable-zia
 %endif
 
 %setup -n %{kmod_name}-%{version}

@@ -287,5 +287,6 @@ tests = ['idmap_mount_001', 'idmap_mount_002', 'idmap_mount_003',
 tags = ['functional', 'idmap_mount']
 
 [tests/functional/zia:Linux]
-tests = ['zia_props', 'zia_write_pipeline', 'zia_raidz_resilver']
+tests = ['zia_props', 'zia_unattached', 'zia_write_pipeline',
+    'zia_raidz_resilver']
 tags = ['functional', 'zia']

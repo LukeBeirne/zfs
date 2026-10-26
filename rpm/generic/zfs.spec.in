@@ -73,7 +73,7 @@
 %bcond_with    systemd
 %bcond_with    pam
 %bcond_without pyzfs
-%bcond_with    zia
+%bcond_without zia
 
 # Generic enable switch for systemd
 %if %{with systemd}
@@ -388,9 +388,9 @@ support for unlocking datasets on user login.
 %endif
 
 %if %{with zia}
-    %define zia --with-zia="%{DPUSM_ROOT}"
+    %define zia --enable-zia
 %else
-    %define zia --without-zia
+    %define zia --disable-zia
 %endif
 
 %setup -q

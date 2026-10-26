@@ -142,6 +142,7 @@ COMMON_H = \
 	sys/zfs_znode.h \
 	sys/zia.h \
 	sys/zia_cddl.h \
+	sys/zia_ops.h \
 	sys/zia_private.h \
 	sys/zil.h \
 	sys/zil_impl.h \

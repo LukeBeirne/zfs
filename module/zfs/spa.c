@@ -615,6 +615,10 @@ spa_prop_get_config(spa_t *spa, nvlist_t *nv)
 		}
 	}
 
+	/* whether an accelerator interface is attached right now */
+	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_AVAILABLE,
+	    zia_is_attached() ? "yes" : "no", 0, ZPROP_SRC_NONE);
+
 	zia_props_t *zia_props = zia_get_props(spa);
 	if (zia_props->provider != NULL) {
 		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_PROVIDER,
@@ -764,6 +768,40 @@ out:
 }
 
 /*
+ * Replace the pool's Z.I.A. provider with new_provider (which may be
+ * NULL). The pool takes over the caller's reference on new_provider.
+ *
+ * zia_provider is runtime-only: it is not stored in the pool, so it
+ * has to be set again after the pool is imported.
+ */
+static void
+spa_zia_set_provider(spa_t *spa, void *new_provider)
+{
+	zia_props_t *zia_props = zia_get_props(spa);
+
+	/* the old provider's vdev handles are closed by zia_put_provider */
+	if (zia_props->provider != NULL)
+		(void) zia_put_provider(&zia_props->provider,
+		    spa->spa_root_vdev);
+
+	mutex_enter(&spa->spa_props_lock);
+	zia_props->provider = new_provider;
+	zia_props->can_offload = (new_provider != NULL);
+	mutex_exit(&spa->spa_props_lock);
+
+	/*
+	 * disk_write and file_write can be enabled before a provider is
+	 * chosen, or while providers are swapped, so open the vdevs for
+	 * the new provider now. There is no vdev tree yet while a pool
+	 * is being created; in that case the vdevs are opened when
+	 * zia_file_write/zia_disk_write are synced.
+	 */
+	if (new_provider != NULL && spa->spa_root_vdev != NULL &&
+	    (zia_props->disk_write || zia_props->file_write))
+		zia_open_vdevs(spa->spa_root_vdev);
+}
+
+/*
  * Validate the given pool properties nvlist and modify the list
  * for the property values to be set.
  */
@@ -774,7 +812,8 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 	int error = 0, reset_bootfs = 0;
 	uint64_t objnum = 0;
 	boolean_t has_feature = B_FALSE;
-	zia_props_t *zia_props = zia_get_props(spa);
+	boolean_t zia_set_provider = B_FALSE;
+	void *zia_new_provider = NULL;
 
 	elem = NULL;
 	while ((elem = nvlist_next_nvpair(props, elem)) != NULL) {
@@ -970,40 +1009,27 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			break;
 
 		case ZPOOL_PROP_ZIA_PROVIDER:
+			/*
+			 * Only look the provider up here. It replaces the
+			 * current one after every property has been
+			 * validated, so that a later validation error does
+			 * not leave the new provider held.
+			 */
 			strval = fnvpair_value_string(elem);
-			if (strncmp(strval, "NULL", 5) == 0 ||
-			    strncmp(strval, "off", 4) == 0) {
-				zia_put_provider(&zia_props->provider,
-				    spa->spa_root_vdev);
-				break;
-			}
+			if (zia_new_provider != NULL)
+				(void) zia_put_provider(&zia_new_provider,
+				    NULL);
+			zia_set_provider = B_TRUE;
 
-			void *new_provider = zia_get_provider(strval);
-			if (new_provider == NULL) {
+			if (strcmp(strval, "NULL") == 0 ||
+			    strcmp(strval, "off") == 0)
+				break;
+
+			zia_new_provider = zia_get_provider(strval);
+			if (zia_new_provider == NULL) {
 				error = SET_ERROR(
 				    ZFS_ERR_ZIA_NONEXISTENT_PROVIDER);
-				break;
 			}
-
-			if (zia_props->provider != NULL)
-				zia_put_provider(&zia_props->provider,
-				    spa->spa_root_vdev);
-
-			zia_props->provider = new_provider;
-			zia_props->can_offload = !!zia_props->provider;
-
-			/*
-			 * It is possible to enable disk_write or file_write
-			 * without passing a provider, or swapping one
-			 * provider with another while these flags are enabled.
-			 * In those cases, vdevs must be opened for the new
-			 * provider upon being passed.
-			 * The vdevs will be closed for the older provider
-			 * in zia_put_provider() first.
-			 */
-			ASSERT3P(spa->spa_root_vdev, !=, NULL);
-			if (zia_props->disk_write || zia_props->file_write)
-				zia_open_vdevs(spa->spa_root_vdev);
 			break;
 		case ZPOOL_PROP_ZIA_COMPRESS:
 		case ZPOOL_PROP_ZIA_DECOMPRESS:
@@ -1024,6 +1050,13 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 
 		if (error)
 			break;
+	}
+
+	if (error != 0) {
+		if (zia_new_provider != NULL)
+			(void) zia_put_provider(&zia_new_provider, NULL);
+	} else if (zia_set_provider) {
+		spa_zia_set_provider(spa, zia_new_provider);
 	}
 
 	(void) nvlist_remove_all(props,

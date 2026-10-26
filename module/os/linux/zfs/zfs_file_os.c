@@ -389,3 +389,8 @@ zfs_file_put(zfs_file_t *zfp)
 	struct file *fp = zfp;
 	fput(fp);
 }
+
+/* used by the example Z.I.A. software provider */
+EXPORT_SYMBOL(zfs_file_open);
+EXPORT_SYMBOL(zfs_file_close);
+EXPORT_SYMBOL(zfs_file_pwrite);

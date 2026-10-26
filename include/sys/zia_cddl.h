@@ -16,17 +16,17 @@
 #include <sys/abd.h>
 #include <sys/zio.h>
 #include <sys/zio_compress.h>
+#include <sys/zia_ops.h>
 
 #ifdef ZIA
-#include <dpusm/user_api.h>
 int
-zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
+zia_compress_impl(const zia_ops_t *zia_ops, zia_props_t *props,
     enum zio_compress c, abd_t *src, size_t s_len,
     abd_t **dst, void **cbuf_handle, uint64_t *c_len,
     uint8_t level, boolean_t *local_offload);
 
 int
-zia_raidz_rec_impl(const dpusm_uf_t *dpusm,
+zia_raidz_rec_impl(const zia_ops_t *zia_ops,
     raidz_row_t *rr, int *t, int nt);
 
 #ifdef _KERNEL

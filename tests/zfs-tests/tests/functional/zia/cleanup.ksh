@@ -21,6 +21,5 @@
 
 verify_runnable "global"
 
-log_must dpusm_loaded
 log_must unload_provider
 default_cleanup
