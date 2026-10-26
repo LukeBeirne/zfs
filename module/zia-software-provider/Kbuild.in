@@ -1,0 +1,11 @@
+obj-m := zia-software-provider.o
+
+zia-software-provider-objs := provider.o kernel_offloader.o
+zia-software-provider-objs += zfs_file_os.o
+
+ccflags-y += $(ZFS_MODULE_CFLAGS) $(ZFS_MODULE_CPPFLAGS)
+ccflags-y += -I$(ZFS_SRC)/module/zia-software-provider
+ccflags-y += -I$(DPUSM)/include
+
+KBUILD_EXTRA_SYMBOLS += $(DPUSM)/Module.symvers
+KBUILD_EXTRA_SYMBOLS += $(ZFS_BUILD)/module/Module.symvers

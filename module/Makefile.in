@@ -9,8 +9,52 @@ install: modules_install data_install
 uninstall: modules_uninstall data_uninstall
 check:
 
+# Build the optional provider independently of the core ZFS modules.  DPUSM is
+# deliberately a make-time dependency so a standalone ZIA build does not need
+# DPUSM headers or symbols during configure or the normal module build.
+PROVIDER_KBUILD_CFLAGS = -std=gnu11 -Wno-declaration-after-statement \
+	-Wmissing-prototypes @KERNEL_NO_FORMAT_ZERO_LENGTH@ \
+	@KERNEL_DEBUG_CFLAGS@ \
+	-include @abs_top_builddir@/zfs_config.h \
+	-include @abs_top_srcdir@/include/sys/simd_config.h \
+	-I@abs_top_builddir@/include \
+	-I@abs_top_srcdir@/include/os/linux/kernel \
+	-I@abs_top_srcdir@/include/os/linux/spl \
+	-I@abs_top_srcdir@/include/os/linux/zfs \
+	-I@abs_top_srcdir@/include
+PROVIDER_KBUILD_CPPFLAGS = -D_KERNEL @KERNEL_ZIA_CPPFLAGS@ \
+	@KERNEL_DEBUG_CPPFLAGS@
+
+zia-software-provider:
+	@test -n "$(DPUSM)" || { echo "DPUSM must name a DPUSM build" >&2; exit 1; }
+	@test -r "$(DPUSM)/include/dpusm/provider_api.h" || { echo "missing $(DPUSM)/include/dpusm/provider_api.h" >&2; exit 1; }
+	@test -r "$(DPUSM)/Module.symvers" || { echo "missing $(DPUSM)/Module.symvers" >&2; exit 1; }
+	@test -r "@abs_top_builddir@/module/Module.symvers" || { echo "build ZFS before building the provider: missing @abs_top_builddir@/module/Module.symvers" >&2; exit 1; }
+	@test -r "@abs_top_builddir@/module/os/linux/zfs/zfs_file_os.o" || { echo "build ZFS before building the provider: missing zfs_file_os.o" >&2; exit 1; }
+	mkdir -p "@abs_top_builddir@/module/zia-software-provider"
+	if test "@abs_srcdir@" != "@abs_top_builddir@/module"; then \
+		cp -f "@abs_srcdir@/zia-software-provider/provider.c" "@abs_top_builddir@/module/zia-software-provider/provider.c"; \
+		cp -f "@abs_srcdir@/zia-software-provider/kernel_offloader.c" "@abs_top_builddir@/module/zia-software-provider/kernel_offloader.c"; \
+		cp -f "@abs_srcdir@/zia-software-provider/kernel_offloader.h" "@abs_top_builddir@/module/zia-software-provider/kernel_offloader.h"; \
+	fi
+	cp -f "@abs_top_builddir@/module/os/linux/zfs/zfs_file_os.o" "@abs_top_builddir@/module/zia-software-provider/zfs_file_os.o"
+	if test -r "@abs_top_builddir@/module/os/linux/zfs/.zfs_file_os.o.cmd"; then \
+		cp -f "@abs_top_builddir@/module/os/linux/zfs/.zfs_file_os.o.cmd" "@abs_top_builddir@/module/zia-software-provider/.zfs_file_os.o.cmd"; \
+	fi
+	$(MAKE) -C @LINUX_OBJ@ \
+		M="@abs_top_builddir@/module/zia-software-provider" \
+		@KERNEL_MAKE@ CONFIG_ZFS=m \
+		DPUSM="$(DPUSM)" \
+		ZFS_SRC="@abs_top_srcdir@" ZFS_BUILD="@abs_top_builddir@" \
+		ZFS_MODULE_CFLAGS="$(PROVIDER_KBUILD_CFLAGS)" \
+		ZFS_MODULE_CPPFLAGS="$(PROVIDER_KBUILD_CPPFLAGS)" \
+		modules
+	cp -f "@abs_top_builddir@/module/zia-software-provider/zia-software-provider.ko" \
+		"@abs_top_builddir@/module/zia-software-provider.ko"
+
 .PHONY: all distclean maintainer-clean install uninstall check distdir gitrev \
 	modules modules-Linux modules-FreeBSD modules-unknown \
+	zia-software-provider \
 	clean clean-Linux clean-FreeBSD \
 	modules_install modules_install-Linux modules_install-FreeBSD \
 	data_install data_install-Linux data_install-FreeBSD \

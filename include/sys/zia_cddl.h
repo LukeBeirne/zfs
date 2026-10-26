@@ -18,7 +18,7 @@
 #include <sys/zio_compress.h>
 
 #ifdef ZIA
-#include <dpusm/user_api.h>
+#include <sys/dpusm/user_api.h>
 int
 zia_compress_impl(const dpusm_uf_t *dpusm, zia_props_t *props,
     enum zio_compress c, abd_t *src, size_t s_len,

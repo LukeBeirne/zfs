@@ -564,7 +564,8 @@ endef
 $(foreach target,$(z_cdirs), $(eval $(call ZKMOD_C_O_MAKE_TARGET,$(target))))
 $(foreach target,$(z_sdirs), $(eval $(call ZKMOD_S_O_MAKE_TARGET,$(target))))
 
-# DPUSM TODO
+# The optional in-tree software provider still needs DPUSM's headers and
+# exported-symbol list. Core Z.I.A. has no such build-time dependency.
 ifneq ("@DPUSM_SYMBOLS@","")
 obj-$(CONFIG_ZFS) += zia-software-provider.o
 
@@ -578,5 +579,5 @@ zia-software-provider-objs += os/linux/zfs/zfs_file_os.o
 
 $(addprefix $(obj)/zia-software-provider/,$(ZIA_SOFTWARE_PROVIDER_OBJS)) : ccflags-y += -I@abs_top_builddir@ $(ZFS_MODULE_CFLAGS) -I@abs_srcdir@/zia-software-provider/ -I@DPUSM_ROOT@/include
 
-@ZIA_ENABLED_TRUE@KBUILD_EXTRA_SYMBOLS += @DPUSM_SYMBOLS@
+KBUILD_EXTRA_SYMBOLS += @DPUSM_SYMBOLS@
 endif

@@ -82,7 +82,7 @@
  * depends on ZFS for its "offload" functionality.
  *
  * Usage:
- *     1. Reconfigure ZFS with --with-zia=<DPUSM root>
+ *     1. Build and load ZFS with Z.I.A. support; no DPUSM path is needed.
  *
  *     2. Create a zpool
  *
@@ -124,8 +124,13 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 
+#include <dpusm/user_api.h>
 #include <dpusm/provider_api.h> /* the DPUSM provider API */
 #include <kernel_offloader.h>   /* provides access to the offloader */
+
+#define ZIA_OK 1000
+extern int zia_dpusm_register(const dpusm_uf_t *api);
+extern int zia_dpusm_unregister(void);
 
 /* translate from offloader values to DPUSM values */
 static int
@@ -493,15 +498,34 @@ static const dpusm_pf_t sw_provider_functions = {
 static int __init
 sw_provider_init(void)
 {
+	const dpusm_uf_t *api = dpusm_initialize();
+	int ret;
+
+	if (api == NULL)
+		return (-ENODEV);
+
 	/* "accelerator" API initialization */
 	kernel_offloader_init();
 
-	return (dpusm_register_bsd(THIS_MODULE, &sw_provider_functions));
+	ret = dpusm_register_bsd(THIS_MODULE, &sw_provider_functions);
+	if (ret != DPUSM_OK) {
+		kernel_offloader_fini();
+		return (ret);
+	}
+
+	ret = zia_dpusm_register(api);
+	if (ret != ZIA_OK) {
+		dpusm_unregister_bsd(THIS_MODULE);
+		kernel_offloader_fini();
+	}
+
+	return (ret);
 }
 
 static void __exit
 sw_provider_exit(void)
 {
+	(void) zia_dpusm_unregister();
 	dpusm_unregister_bsd(THIS_MODULE);
 
 	/* "accelerator" API finalization */

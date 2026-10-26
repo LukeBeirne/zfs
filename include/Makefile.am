@@ -143,6 +143,8 @@ COMMON_H = \
 	sys/zia.h \
 	sys/zia_cddl.h \
 	sys/zia_private.h \
+	sys/dpusm/common.h \
+	sys/dpusm/user_api.h \
 	sys/zil.h \
 	sys/zil_impl.h \
 	sys/zio.h \

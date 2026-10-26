@@ -2175,7 +2175,9 @@ zio_write_compress(zio_t *zio)
 			 *
 			 * if failed, recompress with cpu compression
 			 */
-			const int zia_rc = zia_onload_abd(cabd, psize, B_FALSE);
+			int zia_rc = ZIA_OK;
+			if (zia_is_offloaded(cabd))
+				zia_rc = zia_onload_abd(cabd, psize, B_FALSE);
 			if ((zia_rc != ZIA_OK) &&
 			    (zia_rc != ZIA_ERROR) &&
 			    (zia_rc != ZIA_DISABLED)) {

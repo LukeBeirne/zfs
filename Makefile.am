@@ -104,6 +104,10 @@ clean-local: $(CLEAN_LOCAL)
 PHONY += $(ALL_LOCAL)
 all-local: $(ALL_LOCAL)
 
+PHONY += zia-software-provider
+zia-software-provider:
+	$(MAKE) -C module zia-software-provider DPUSM="$(DPUSM)"
+
 dist-hook:
 	$(top_srcdir)/scripts/make_gitrev.sh -D $(distdir) $(GITREV)
 	$(SED) $(ac_inplace) 's/\(Release:[[:space:]]*\).*/\1$(RELEASE)/' $(distdir)/META

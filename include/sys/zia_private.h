@@ -64,7 +64,7 @@ int
 dpusm_to_ret(const int dpusm_ret);
 
 #ifdef ZIA
-#include <dpusm/user_api.h>
+#include <sys/dpusm/user_api.h>
 
 dpusm_compress_t
 compress_to_dpusm(enum zio_compress c);

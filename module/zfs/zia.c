@@ -57,15 +57,42 @@
 #include <sys/zia_private.h>
 
 #ifdef ZIA
-#include <dpusm/user_api.h>
+#if defined(_KERNEL) && defined(__linux__)
+#include <linux/module.h>
+#include <linux/kmod.h>
+#endif
 #else
 typedef void * dpusm_uf_t;
 #endif
 
 /* ************************************************************* */
-/* global offloader functions initialized with ZFS */
+/* global offloader functions supplied by DPUSM */
 static const dpusm_uf_t *dpusm = NULL;
 /* ************************************************************* */
+
+#if defined(ZIA) && defined(_KERNEL) && defined(__linux__)
+int zia_dpusm_register(const dpusm_uf_t *api);
+int zia_dpusm_unregister(void);
+
+int
+zia_dpusm_register(const dpusm_uf_t *api)
+{
+	if (api == NULL || dpusm != NULL)
+		return (ZIA_ERROR);
+
+	dpusm = api;
+	return (ZIA_OK);
+}
+EXPORT_SYMBOL(zia_dpusm_register);
+
+int
+zia_dpusm_unregister(void)
+{
+	dpusm = NULL;
+	return (ZIA_OK);
+}
+EXPORT_SYMBOL(zia_dpusm_unregister);
+#endif
 
 zia_props_t *
 zia_get_props(spa_t *spa)
@@ -243,52 +270,21 @@ zia_init(void)
 		return (ZIA_OK);
 	}
 
-	if (dpusm_initialize) {
-		dpusm = dpusm_initialize();
-	}
-
-	if (!dpusm) {
 #if defined(_KERNEL) && defined(__linux__)
-		printk("Warning: Z.I.A. not initialized\n");
+	return (dpusm != NULL ? ZIA_OK : ZIA_FALLBACK);
 #endif
-		return (ZIA_ERROR);
-	}
 
-#if defined(_KERNEL) && defined(__linux__)
-	printk("Z.I.A. initialized (%p)\n", dpusm);
+	return (dpusm != NULL ? ZIA_OK : ZIA_ERROR);
 #endif
-	return (ZIA_OK);
-#else
 	return (ZIA_DISABLED);
-#endif
 }
 
 int
 zia_fini(void)
 {
 	if (!dpusm) {
-#if defined(_KERNEL) && defined(__linux__)
-		printk("Warning: Z.I.A. not initialized. "
-		    "Not uninitializing.\n");
-#endif
-		return (ZIA_ERROR);
+		return (ZIA_OK);
 	}
-
-#ifdef ZIA
-	if (dpusm_finalize) {
-		dpusm_finalize();
-#if defined(_KERNEL) && defined(__linux__)
-		printk("Z.I.A. finalized\n");
-#endif
-	} else {
-#if defined(_KERNEL) && defined(__linux__)
-		if (dpusm) {
-			printk("Z.I.A. incomplete finalize\n");
-		}
-#endif
-	}
-#endif
-
 	dpusm = NULL;
 	return (ZIA_OK);
 }
@@ -337,6 +333,14 @@ void *
 zia_get_provider(const char *name)
 {
 #ifdef ZIA
+	if (!dpusm)
+		(void) zia_init();
+#if defined(_KERNEL) && defined(__linux__)
+	if (!dpusm) {
+		(void) request_module("%s", name);
+		(void) zia_init();
+	}
+#endif
 	if (!dpusm) {
 		return (NULL);
 	}
@@ -472,7 +476,7 @@ zia_is_used(zio_t *zio)
 	zia_props_t *props = zia_get_props(zio->io_spa);
 
 	/* provider + at least 1 operation */
-	if (props->provider &&
+	if (dpusm && props->provider &&
 	    (props->compress ||
 	    props->decompress ||
 	    props->checksum ||

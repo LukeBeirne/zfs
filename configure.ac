@@ -68,6 +68,7 @@ AC_CONFIG_FILES([
 	lib/libzfsbootenv/libzfsbootenv.pc
 	module/Kbuild
 	module/Makefile
+	module/zia-software-provider/Kbuild
 	rpm/generic/zfs-dkms.spec
 	rpm/generic/zfs-kmod.spec
 	rpm/generic/zfs.spec
