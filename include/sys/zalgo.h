@@ -206,5 +206,8 @@ int zalgo_shim_freebsd_register(void);
 int zalgo_shim_icp_register(void);
 int zalgo_shim_openssl_register(void);
 int zalgo_shim_my_fletcher_register(void);
+#ifdef HAVE_ZALGO_DPUSM
+int zalgo_shim_dpusm_register(void);
+#endif
 
 #endif

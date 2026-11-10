@@ -1,6 +1,11 @@
 noinst_LTLIBRARIES += libzalgo.la libzalgo_shim_fletcher.la libzalgo_shim_icp.la libzalgo_shim_openssl.la
 CPPCHECKTARGETS    += libzalgo.la libzalgo_shim_fletcher.la libzalgo_shim_icp.la libzalgo_shim_openssl.la
 
+if ZALGO_DPUSM_ENABLED
+noinst_LTLIBRARIES += libzalgo_shim_dpusm.la
+CPPCHECKTARGETS    += libzalgo_shim_dpusm.la
+endif
+
 libzalgo_la_CFLAGS  = $(AM_CFLAGS) $(KERNEL_CFLAGS) $(LIBRARY_CFLAGS)
 libzalgo_la_CPPFLAGS  = $(AM_CPPFLAGS)
 
@@ -26,3 +31,9 @@ libzalgo_shim_openssl_la_CPPFLAGS  = $(libzalgo_la_CPPFLAGS)
 nodist_libzalgo_shim_openssl_la_SOURCES = \
 	module/zalgo/zalgo_shim_openssl.c
 
+libzalgo_shim_dpusm_la_CFLAGS = $(libzalgo_la_CFLAGS)
+libzalgo_shim_dpusm_la_CPPFLAGS = $(libzalgo_la_CPPFLAGS) \
+	$(ZALGO_DPUSM_CPPFLAGS)
+
+nodist_libzalgo_shim_dpusm_la_SOURCES = \
+	module/zalgo/zalgo_shim_dpusm.c

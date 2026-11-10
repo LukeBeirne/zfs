@@ -341,6 +341,9 @@ openzfs_init(void)
 	zalgo_shim_icp_register();
 	zalgo_shim_fletcher_register();
 	zalgo_shim_my_fletcher_register();
+#ifdef HAVE_ZALGO_DPUSM
+	zalgo_shim_dpusm_register();
+#endif
 	zalgo_bench_all();
 
 	if ((err = zstd_init()) != 0)

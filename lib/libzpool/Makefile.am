@@ -223,6 +223,10 @@ libzpool_la_LIBADD = \
 	libzstd.la \
 	libzutil.la
 
+if ZALGO_DPUSM_ENABLED
+libzpool_la_LIBADD += libzalgo_shim_dpusm.la
+endif
+
 libzpool_la_LIBADD += $(LIBCLOCK_GETTIME) $(LIBCRYPTO_LIBS) $(ZLIB_LIBS) -lm
 
 libzpool_la_LDFLAGS = -version-info 7:0:0

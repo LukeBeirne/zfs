@@ -267,6 +267,13 @@ ZALGO_OBJS := \
 	zalgo_shim_icp.o \
 	zalgo_shim_my_fletcher.o
 
+ifneq ("@ZALGO_DPUSM_ENABLED@","")
+ZALGO_OBJS += zalgo_shim_dpusm.o
+KBUILD_EXTRA_SYMBOLS += @DPUSM_SYMBOLS@
+
+$(obj)/zalgo/zalgo_shim_dpusm.o: ccflags-y += @ZALGO_DPUSM_CPPFLAGS@
+endif
+
 zfs-objs            += $(addprefix zalgo/,$(ZALGO_OBJS))
 
 
