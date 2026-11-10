@@ -817,6 +817,8 @@ abd_iterate_func(abd_t *abd, size_t off, size_t size,
 	return (ret);
 }
 
+EXPORT_SYMBOL(abd_iterate_func);
+
 #if defined(__linux__) && defined(_KERNEL)
 int
 abd_iterate_page_func(abd_t *abd, size_t off, size_t size,

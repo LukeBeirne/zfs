@@ -205,5 +205,6 @@ int zalgo_shim_fletcher_register(void);
 int zalgo_shim_freebsd_register(void);
 int zalgo_shim_icp_register(void);
 int zalgo_shim_openssl_register(void);
+int zalgo_shim_my_fletcher_register(void);
 
 #endif
