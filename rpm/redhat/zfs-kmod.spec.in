@@ -60,9 +60,9 @@ fi
 %endif
 
 %if %{with zia}
-%define zia --with-zia="%{?DPUSM_ROOT}"
+%define zia --enable-zia
 %else
-%define zia --without-zia
+%define zia --disable-zia
 %endif
 
 %setup -n %{kmod_name}-%{version}

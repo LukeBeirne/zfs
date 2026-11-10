@@ -104,9 +104,11 @@ clean-local: $(CLEAN_LOCAL)
 PHONY += $(ALL_LOCAL)
 all-local: $(ALL_LOCAL)
 
-PHONY += zia-software-provider
-zia-software-provider:
-	$(MAKE) -C module zia-software-provider DPUSM="$(DPUSM)"
+PHONY += zia-dpusm zia-software-provider zia-modules zia-modules-install
+zia-dpusm zia-software-provider zia-modules:
+	$(MAKE) -C module $@ DPUSM="$(DPUSM)"
+zia-modules-install:
+	$(MAKE) -C module $@
 
 dist-hook:
 	$(top_srcdir)/scripts/make_gitrev.sh -D $(distdir) $(GITREV)

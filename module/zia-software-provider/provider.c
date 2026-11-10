@@ -78,18 +78,28 @@
  * or have access to, pointers returned from the kernel offloader are
  * masked with a random value.
  *
- * Note that this provider has to be loaded after ZFS because it
- * depends on ZFS for its "offload" functionality.
+ * This provider is only an example.  It knows nothing about Z.I.A.
+ * attachment: it registers with DPUSM like any other provider, and
+ * Z.I.A. reaches it through the separate zia-dpusm module.  It has to
+ * be loaded after ZFS because it depends on ZFS for its "offload"
+ * functionality.
  *
  * Usage:
- *     1. Build and load ZFS with Z.I.A. support; no DPUSM path is needed.
+ *     1. Build ZFS with Z.I.A. support, then build this provider and
+ *        the zia-dpusm module with
+ *            make zia-modules DPUSM=<DPUSM build directory>
  *
- *     2. Create a zpool
+ *     2. Load the modules in this order (unload in reverse)
+ *            zfs, dpusm, zia-dpusm, zia-software-provider
+ *        zia-dpusm and this provider can be loaded in either order
+ *        after dpusm.
  *
- *     3. Select this provider with
- *            zpool set zia_provider=zia-software-provider <zpool>
+ *     3. Create a zpool
  *
- *     4. Enable "offloading" of operations with
+ *     4. Select this provider with
+ *            zpool set zia_provider=zia_software_provider <zpool>
+ *
+ *     5. Enable "offloading" of operations with
  *            zpool set zia_compress=on   <zpool>
  *            zpool set zia_decompress=on <zpool>
  *            zpool set zia_checksum=on   <zpool>
@@ -102,7 +112,7 @@
  *            zpool set zia_file_write=on <zpool>
  *            zpool set zia_disk_write=on <zpool>
  *
- *     5. Use the zpool as you would normally
+ *     6. Use the zpool as you would normally
  *
  *     Notes:
  *         If a ZFS IO stage is not run, enabling a Z.I.A. offload
@@ -124,13 +134,8 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 
-#include <dpusm/user_api.h>
 #include <dpusm/provider_api.h> /* the DPUSM provider API */
 #include <kernel_offloader.h>   /* provides access to the offloader */
-
-#define ZIA_OK 1000
-extern int zia_dpusm_register(const dpusm_uf_t *api);
-extern int zia_dpusm_unregister(void);
 
 /* translate from offloader values to DPUSM values */
 static int
@@ -498,34 +503,21 @@ static const dpusm_pf_t sw_provider_functions = {
 static int __init
 sw_provider_init(void)
 {
-	const dpusm_uf_t *api = dpusm_initialize();
-	int ret;
-
-	if (api == NULL)
-		return (-ENODEV);
-
 	/* "accelerator" API initialization */
 	kernel_offloader_init();
 
-	ret = dpusm_register_bsd(THIS_MODULE, &sw_provider_functions);
+	const int ret = dpusm_register_bsd(THIS_MODULE, &sw_provider_functions);
 	if (ret != DPUSM_OK) {
 		kernel_offloader_fini();
-		return (ret);
+		return (ret < 0 ? ret : -EIO);
 	}
 
-	ret = zia_dpusm_register(api);
-	if (ret != ZIA_OK) {
-		dpusm_unregister_bsd(THIS_MODULE);
-		kernel_offloader_fini();
-	}
-
-	return (ret);
+	return (0);
 }
 
 static void __exit
 sw_provider_exit(void)
 {
-	(void) zia_dpusm_unregister();
 	dpusm_unregister_bsd(THIS_MODULE);
 
 	/* "accelerator" API finalization */

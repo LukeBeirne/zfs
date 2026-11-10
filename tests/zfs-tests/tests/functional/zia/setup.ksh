@@ -22,11 +22,6 @@ verify_runnable "global"
 
 log_must default_zpool
 
-# dpusm must be loaded before ZFS, but have to check
-# after creating the zpool because this function uses
-# the result of 'zpool get zia_available'
-log_must dpusm_loaded
-
 log_must load_provider
 
 log_pass

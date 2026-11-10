@@ -236,12 +236,7 @@ zpool_prop_init(void)
 	    ZPOOL_DEDUPCACHED_PROP_NAME, PROP_TYPE_NUMBER, PROP_READONLY,
 	    ZFS_TYPE_POOL, "DEDUPCACHED", B_FALSE, sfeatures);
 
-	zprop_register_string(ZPOOL_PROP_ZIA_AVAILABLE, "zia_available",
-#ifdef ZIA
-	    "yes",
-#else
-	    "no",
-#endif
+	zprop_register_string(ZPOOL_PROP_ZIA_AVAILABLE, "zia_available", "no",
 	    PROP_READONLY, ZFS_TYPE_POOL, "yes | no", "zia_available",
 	    sfeatures);
 	zprop_register_string(ZPOOL_PROP_ZIA_PROVIDER, "zia_provider", NULL,

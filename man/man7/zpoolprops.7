@@ -651,8 +651,16 @@ Controls whether a pool should offload write I/Os to disks.
 .It Sy zia_file_write Ns = Ns Sy on Ns | Ns Sy off
 Controls whether a pool should offload write I/Os to files.
 .It Sy zia_provider Ns = Ns Sy (unset) | Ns Sy Z.I.A. Provider Name
-Selects an accelerator registered in the Data Processing Unit Services
-Module to offload data to.
+Selects an accelerator to offload data to.
+The accelerator is looked up through the accelerator interface that is
+attached to Z.I.A., for example by loading the
+.Sy zia_dpusm
+module, which looks up providers registered with the Data Processing Unit
+Services Module.
+Setting this property fails if no accelerator interface is attached.
+The read-only
+.Sy zia_available
+property reports whether an accelerator interface is attached.
 Only one accelerator can be used by a pool at a time.
 .It Sy zia_raidz1_gen Ns = Ns Sy on Ns | Ns Sy off
 Controls whether the pool should offload RAIDZ1 parity generation.

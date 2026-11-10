@@ -82,7 +82,7 @@
 #define	ZIA_ACCELERATOR_DOWN 1005
 /* ******************************************************** */
 
-/* DPUSM was not found by configure */
+/* Z.I.A. was disabled by configure */
 #define	ZIA_DISABLED 1006
 
 /*
@@ -114,6 +114,9 @@ void zia_prop_warn(boolean_t val, const char *name);
 
 int zia_init(void);
 int zia_fini(void);
+
+/* whether an accelerator interface is attached */
+boolean_t zia_is_attached(void);
 
 void zia_open_vdevs(vdev_t *vd);
 void *zia_get_provider(const char *name);

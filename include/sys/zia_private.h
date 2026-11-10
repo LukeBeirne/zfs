@@ -60,16 +60,10 @@
 
 #define	VDEV_HANDLE(vdev) (vdev)->vdev_zia_handle
 
-int
-dpusm_to_ret(const int dpusm_ret);
-
 #ifdef ZIA
-#include <sys/dpusm/user_api.h>
+#include <sys/zia_ops.h>
 
-dpusm_compress_t
-compress_to_dpusm(enum zio_compress c);
-
-int zia_get_capabilities(void *provider, dpusm_pc_t **caps);
+int zia_get_capabilities(void *provider, zia_caps_t *caps);
 
 #endif /* ZIA */
 

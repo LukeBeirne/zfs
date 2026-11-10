@@ -1,0 +1,9 @@
+obj-m := zia-dpusm.o
+
+zia-dpusm-objs := zia_dpusm.o
+
+ccflags-y += $(ZFS_MODULE_CFLAGS) $(ZFS_MODULE_CPPFLAGS)
+ccflags-y += -I$(DPUSM)/include
+
+KBUILD_EXTRA_SYMBOLS += $(DPUSM)/Module.symvers
+KBUILD_EXTRA_SYMBOLS += $(ZFS_BUILD)/module/Module.symvers

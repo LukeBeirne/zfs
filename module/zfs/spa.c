@@ -616,6 +616,10 @@ spa_prop_get_config(spa_t *spa, nvlist_t *nv)
 	}
 
 	zia_props_t *zia_props = zia_get_props(spa);
+#ifdef ZIA
+	spa_prop_add_list(nv, ZPOOL_PROP_ZIA_AVAILABLE,
+	    zia_is_attached() ? "yes" : "no", 0, ZPROP_SRC_NONE);
+#endif
 	if (zia_props->provider != NULL) {
 		spa_prop_add_list(nv, ZPOOL_PROP_ZIA_PROVIDER,
 		    (char *)zia_get_provider_name(zia_props->provider),

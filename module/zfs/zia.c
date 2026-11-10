@@ -56,43 +56,93 @@
 #include <sys/zia_cddl.h>
 #include <sys/zia_private.h>
 
-#ifdef ZIA
+#include <sys/zia_ops.h>
+
 #if defined(_KERNEL) && defined(__linux__)
 #include <linux/module.h>
-#include <linux/kmod.h>
+#include <linux/rwsem.h>
 #endif
+
+/*
+ * Accelerator operations attached by a separately built module
+ * (for example, zia-dpusm.ko).  Until a table is attached, every
+ * Z.I.A. function falls back to ZFS.
+ *
+ * zia_ops can only change while no pool holds a provider: each
+ * provider handle returned by zia_get_provider() holds a reference
+ * on the owner module and is counted in zia_ops_users, and
+ * zia_ops_unregister() fails with EBUSY while that count is non-zero.
+ * Handles to accelerator memory are only created through a provider,
+ * so a table in use cannot be detached.  zia_ops_lock serializes
+ * attach, detach, get and put.
+ */
+static const zia_ops_t *zia_ops = NULL;
+
+#if defined(_KERNEL) && defined(__linux__)
+static struct module *zia_ops_owner = NULL;
+static uint64_t zia_ops_users = 0;
+static DECLARE_RWSEM(zia_ops_lock);
+
+int
+zia_ops_register(const zia_ops_t *ops, struct module *owner)
+{
+	if (ops == NULL || owner == NULL)
+		return (EINVAL);
+
+	if (ops->zo_version != ZIA_OPS_VERSION ||
+	    ops->zo_size != sizeof (zia_ops_t)) {
+		printk(KERN_ERR "Z.I.A.: rejecting operations table from %s: "
+		    "version %u size %u, expected version %u size %zu\n",
+		    module_name(owner), ops->zo_version, ops->zo_size,
+		    ZIA_OPS_VERSION, sizeof (zia_ops_t));
+		return (ENOTSUP);
+	}
+
+	down_write(&zia_ops_lock);
+	if (zia_ops != NULL) {
+		up_write(&zia_ops_lock);
+		return (EBUSY);
+	}
+	zia_ops_owner = owner;
+	WRITE_ONCE(zia_ops, ops);
+	up_write(&zia_ops_lock);
+
+	printk(KERN_INFO "Z.I.A.: attached to %s\n", module_name(owner));
+	return (0);
+}
+EXPORT_SYMBOL(zia_ops_register);
+
+int
+zia_ops_unregister(const zia_ops_t *ops)
+{
+	down_write(&zia_ops_lock);
+	if (ops == NULL || zia_ops != ops) {
+		up_write(&zia_ops_lock);
+		return (EINVAL);
+	}
+	if (zia_ops_users != 0) {
+		up_write(&zia_ops_lock);
+		return (EBUSY);
+	}
+	printk(KERN_INFO "Z.I.A.: detached from %s\n",
+	    module_name(zia_ops_owner));
+	WRITE_ONCE(zia_ops, NULL);
+	zia_ops_owner = NULL;
+	up_write(&zia_ops_lock);
+	return (0);
+}
+EXPORT_SYMBOL(zia_ops_unregister);
+#endif
+
+static inline const zia_ops_t *
+zia_get_ops(void)
+{
+#if defined(_KERNEL) && defined(__linux__)
+	return (READ_ONCE(zia_ops));
 #else
-typedef void * dpusm_uf_t;
+	return (zia_ops);
 #endif
-
-/* ************************************************************* */
-/* global offloader functions supplied by DPUSM */
-static const dpusm_uf_t *dpusm = NULL;
-/* ************************************************************* */
-
-#if defined(ZIA) && defined(_KERNEL) && defined(__linux__)
-int zia_dpusm_register(const dpusm_uf_t *api);
-int zia_dpusm_unregister(void);
-
-int
-zia_dpusm_register(const dpusm_uf_t *api)
-{
-	if (api == NULL || dpusm != NULL)
-		return (ZIA_ERROR);
-
-	dpusm = api;
-	return (ZIA_OK);
 }
-EXPORT_SYMBOL(zia_dpusm_register);
-
-int
-zia_dpusm_unregister(void)
-{
-	dpusm = NULL;
-	return (ZIA_OK);
-}
-EXPORT_SYMBOL(zia_dpusm_unregister);
-#endif
 
 zia_props_t *
 zia_get_props(spa_t *spa)
@@ -114,178 +164,40 @@ zia_prop_warn(boolean_t val, const char *name)
 #endif
 }
 
+boolean_t
+zia_is_attached(void)
+{
+	return (zia_get_ops() != NULL);
+}
+
 int
-dpusm_to_ret(const int dpusm_ret)
+zia_get_capabilities(void *provider, zia_caps_t *caps)
 {
-#ifdef ZIA
-	int zia_ret = ZIA_FALLBACK;
-	switch (dpusm_ret) {
-		case DPUSM_OK:
-			zia_ret = ZIA_OK;
-			break;
-		case DPUSM_ERROR:
-			zia_ret = ZIA_ERROR;
-			break;
-		case DPUSM_PROVIDER_MISMATCH:
-			zia_ret = ZIA_PROVIDER_MISMATCH;
-			break;
-		case DPUSM_NOT_IMPLEMENTED:
-		case DPUSM_NOT_SUPPORTED:
-			zia_ret = ZIA_FALLBACK;
-			break;
-		case DPUSM_BAD_RESULT:
-			zia_ret = ZIA_BAD_RESULT;
-			break;
-		case DPUSM_PROVIDER_NOT_EXISTS:
-		case DPUSM_PROVIDER_INVALIDATED:
-		case DPUSM_PROVIDER_UNREGISTERED:
-		default:
-			zia_ret = ZIA_ACCELERATOR_DOWN;
-			break;
-	}
-	return (zia_ret);
-#else
-	(void) dpusm_ret;
-	return (ZIA_DISABLED);
-#endif
+	const zia_ops_t *ops = zia_get_ops();
+	if (!ops || !provider || !caps)
+		return (ZIA_ERROR);
+
+	memset(caps, 0, sizeof (*caps));
+	return (ops->zo_capabilities(provider, caps));
 }
-
-#ifdef ZIA
-dpusm_compress_t
-compress_to_dpusm(enum zio_compress c)
-{
-	dpusm_compress_t dpusm_c = 0;
-
-	switch (c) {
-		case ZIO_COMPRESS_GZIP_1:
-			dpusm_c = DPUSM_COMPRESS_GZIP_1;
-			break;
-		case ZIO_COMPRESS_GZIP_2:
-			dpusm_c = DPUSM_COMPRESS_GZIP_2;
-			break;
-		case ZIO_COMPRESS_GZIP_3:
-			dpusm_c = DPUSM_COMPRESS_GZIP_3;
-			break;
-		case ZIO_COMPRESS_GZIP_4:
-			dpusm_c = DPUSM_COMPRESS_GZIP_4;
-			break;
-		case ZIO_COMPRESS_GZIP_5:
-			dpusm_c = DPUSM_COMPRESS_GZIP_5;
-			break;
-		case ZIO_COMPRESS_GZIP_6:
-			dpusm_c = DPUSM_COMPRESS_GZIP_6;
-			break;
-		case ZIO_COMPRESS_GZIP_7:
-			dpusm_c = DPUSM_COMPRESS_GZIP_7;
-			break;
-		case ZIO_COMPRESS_GZIP_8:
-			dpusm_c = DPUSM_COMPRESS_GZIP_8;
-			break;
-		case ZIO_COMPRESS_GZIP_9:
-			dpusm_c = DPUSM_COMPRESS_GZIP_9;
-			break;
-		case ZIO_COMPRESS_LZ4:
-			dpusm_c = DPUSM_COMPRESS_LZ4;
-			break;
-		case ZIO_COMPRESS_INHERIT:
-		case ZIO_COMPRESS_ON:
-		case ZIO_COMPRESS_OFF:
-		case ZIO_COMPRESS_LZJB:
-		case ZIO_COMPRESS_EMPTY:
-		case ZIO_COMPRESS_ZLE:
-		case ZIO_COMPRESS_ZSTD:
-		case ZIO_COMPRESS_FUNCTIONS:
-		default:
-			break;
-	}
-
-	return (dpusm_c);
-}
-
-static dpusm_checksum_t
-checksum_to_dpusm(enum zio_checksum c)
-{
-	dpusm_checksum_t dpusm_c = 0;
-	switch (c) {
-		case ZIO_CHECKSUM_FLETCHER_2:
-			dpusm_c = DPUSM_CHECKSUM_FLETCHER_2;
-			break;
-		case ZIO_CHECKSUM_FLETCHER_4:
-			dpusm_c = DPUSM_CHECKSUM_FLETCHER_4;
-			break;
-		case ZIO_CHECKSUM_SHA256:
-			dpusm_c = DPUSM_CHECKSUM_SHA256;
-			break;
-		case ZIO_CHECKSUM_INHERIT:
-		case ZIO_CHECKSUM_ON:
-		case ZIO_CHECKSUM_OFF:
-		case ZIO_CHECKSUM_LABEL:
-		case ZIO_CHECKSUM_GANG_HEADER:
-		case ZIO_CHECKSUM_ZILOG:
-		case ZIO_CHECKSUM_ZILOG2:
-		case ZIO_CHECKSUM_NOPARITY:
-		case ZIO_CHECKSUM_SHA512:
-		case ZIO_CHECKSUM_SKEIN:
-		default:
-			break;
-	}
-
-	return (dpusm_c);
-}
-
-static dpusm_checksum_byteorder_t
-byteorder_to_dpusm(zio_byteorder_t bo)
-{
-	dpusm_checksum_byteorder_t dpusm_bo = DPUSM_BYTEORDER_MAX;
-	switch (bo) {
-		case ZIO_CHECKSUM_NATIVE:
-			dpusm_bo = DPUSM_BYTEORDER_NATIVE;
-			break;
-		case ZIO_CHECKSUM_BYTESWAP:
-			dpusm_bo = DPUSM_BYTEORDER_BYTESWAP;
-			break;
-		default:
-			break;
-	}
-
-	return (dpusm_bo);
-}
-#endif
-
-#ifdef ZIA
-int
-zia_get_capabilities(void *provider, dpusm_pc_t **caps)
-{
-	/* dpusm is checked by the caller */
-	/* provider and caps are checked by the dpusm */
-	return (dpusm_to_ret(dpusm->capabilities(provider, caps)));
-}
-#endif
 
 int
 zia_init(void)
 {
 #ifdef ZIA
-	if (dpusm) {
-		return (ZIA_OK);
-	}
-
-#if defined(_KERNEL) && defined(__linux__)
-	return (dpusm != NULL ? ZIA_OK : ZIA_FALLBACK);
-#endif
-
-	return (dpusm != NULL ? ZIA_OK : ZIA_ERROR);
-#endif
+	return (ZIA_OK);
+#else
 	return (ZIA_DISABLED);
+#endif
 }
 
 int
 zia_fini(void)
 {
-	if (!dpusm) {
-		return (ZIA_OK);
-	}
-	dpusm = NULL;
+	/*
+	 * zia_ops is owned by the attaching module, which depends on zfs
+	 * and so must be unloaded (and must have detached) before zfs.
+	 */
 	return (ZIA_OK);
 }
 
@@ -329,37 +241,44 @@ void zia_open_vdevs(vdev_t *vd) {
 	(void) vd;
 }
 
+/*
+ * Get a provider handle from the attached operations table.  The
+ * handle holds a reference on the table's owner module, which is
+ * dropped by zia_put_provider().
+ */
 void *
 zia_get_provider(const char *name)
 {
-#ifdef ZIA
-	if (!dpusm)
-		(void) zia_init();
-#if defined(_KERNEL) && defined(__linux__)
-	if (!dpusm) {
-		(void) request_module("%s", name);
-		(void) zia_init();
-	}
-#endif
-	if (!dpusm) {
+#if defined(ZIA) && defined(_KERNEL) && defined(__linux__)
+	void *provider = NULL;
+
+	down_write(&zia_ops_lock);
+	const zia_ops_t *ops = zia_ops;
+	if (ops == NULL) {
+		up_write(&zia_ops_lock);
+		printk(KERN_WARNING "Z.I.A.: cannot get provider \"%s\": "
+		    "no accelerator interface is attached\n", name);
 		return (NULL);
 	}
 
-	void *provider = NULL;
-	provider = dpusm->get(name);
-#if defined(_KERNEL) && defined(__linux__)
-	printk("Z.I.A. obtained handle to provider \"%s\" (%p)",
+	if (!try_module_get(zia_ops_owner)) {
+		up_write(&zia_ops_lock);
+		return (NULL);
+	}
+
+	provider = ops->zo_get(name);
+	if (provider != NULL)
+		zia_ops_users++;
+	else
+		module_put(zia_ops_owner);
+	up_write(&zia_ops_lock);
+
+	printk(KERN_INFO "Z.I.A. obtained handle to provider \"%s\" (%p)\n",
 	    name, provider);
-#endif
 
 	return (provider);
 #else
 	(void) name;
-
-#if defined(_KERNEL) && defined(__linux__)
-	printk("Z.I.A. not available. Cannot obtain handle to providers.\n");
-#endif
-
 	return (NULL);
 #endif
 }
@@ -367,18 +286,16 @@ zia_get_provider(const char *name)
 const char *
 zia_get_provider_name(void *provider)
 {
-	if (!dpusm || !provider) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops || !provider) {
 		return (NULL);
 	}
 
-#ifdef ZIA
-	return (dpusm->get_name(provider));
-#else
-	return (NULL);
-#endif
+	return (ops->zo_get_name(provider));
 }
 
-#ifdef ZIA
+#if defined(ZIA) && defined(_KERNEL) && defined(__linux__)
 /* recursively find all leaf vdevs and close them */
 static void zia_close_vdevs(vdev_t *vd) {
 	vdev_ops_t *ops = vd->vdev_ops;
@@ -406,10 +323,15 @@ static void zia_close_vdevs(vdev_t *vd) {
 int
 zia_put_provider(void **provider, vdev_t *vdev)
 {
-#ifdef ZIA
-	if (!dpusm || !provider || !*provider) {
+#if defined(ZIA) && defined(_KERNEL) && defined(__linux__)
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!provider || !*provider) {
 		return (ZIA_FALLBACK);
 	}
+
+	/* a provider handle keeps the operations table attached */
+	VERIFY3P(ops, !=, NULL);
 
 	/*
 	 * if the zpool is not going down, but the provider is going away,
@@ -421,21 +343,23 @@ zia_put_provider(void **provider, vdev_t *vdev)
 		(void) spa_vdev_state_exit(vdev->vdev_spa, NULL, 0);
 	}
 
-#ifdef _KERNEL
 	const char *name = zia_get_provider_name(*provider);
-#endif
+	const int ret = ops->zo_put(*provider);
 
-	const int ret = dpusm->put(*provider);
-
-#if defined(_KERNEL) && defined(__linux__)
-	printk("Z.I.A. returned provider handle \"%s\" "
-	    "(%p) and got return value %d",
+	printk(KERN_INFO "Z.I.A. returned provider handle \"%s\" "
+	    "(%p) and got return value %d\n",
 	    name, *provider, ret);
-#endif
 
 	*provider = NULL;
 
-	return (dpusm_to_ret(ret));
+	down_write(&zia_ops_lock);
+	ASSERT3U(zia_ops_users, >, 0);
+	zia_ops_users--;
+	struct module *owner = zia_ops_owner;
+	up_write(&zia_ops_lock);
+	module_put(owner);
+
+	return (ret);
 #else
 	(void) provider; (void) vdev;
 	return (ZIA_DISABLED);
@@ -469,6 +393,8 @@ zia_disable_offloading(zio_t *zio, boolean_t reexecute)
 boolean_t
 zia_is_used(zio_t *zio)
 {
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!zio) {
 		return (B_FALSE);
 	}
@@ -476,7 +402,7 @@ zia_is_used(zio_t *zio)
 	zia_props_t *props = zia_get_props(zio->io_spa);
 
 	/* provider + at least 1 operation */
-	if (dpusm && props->provider &&
+	if (ops && props->provider &&
 	    (props->compress ||
 	    props->decompress ||
 	    props->checksum ||
@@ -535,7 +461,9 @@ void *
 zia_alloc(void *provider, size_t size)
 {
 #ifdef ZIA
-	return ((dpusm && provider)?dpusm->alloc(provider, size):NULL);
+	const zia_ops_t *ops = zia_get_ops();
+
+	return ((ops && provider)?ops->zo_alloc(provider, size):NULL);
 #else
 	(void) provider; (void) size;
 	return (NULL);
@@ -549,12 +477,21 @@ zia_free(void **handle)
 	ASSERT(handle);
 
 #ifdef ZIA
-	int ret = DPUSM_OK;
-	if (dpusm) {
-		ret = dpusm->free(*handle);
+	const zia_ops_t *ops = zia_get_ops();
+
+	/*
+	 * Without an attached table the handle cannot be freed.  Drop it
+	 * and report the accelerator as down so callers stop using it.
+	 */
+	if (!ops) {
+		const int ret = *handle ? ZIA_ACCELERATOR_DOWN : ZIA_OK;
 		*handle = NULL;
+		return (ret);
 	}
-	return (dpusm_to_ret(ret));
+
+	const int ret = ops->zo_free(*handle);
+	*handle = NULL;
+	return (ret);
 #else
 	return (ZIA_DISABLED);
 #endif
@@ -565,7 +502,9 @@ int
 zia_onload(void **handle, void *buf, size_t size)
 {
 #ifdef ZIA
-	if (!dpusm) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -573,23 +512,23 @@ zia_onload(void **handle, void *buf, size_t size)
 		return (ZIA_ERROR);
 	}
 
-	void *provider = dpusm->extract(*handle);
+	void *provider = ops->zo_extract(*handle);
 	if (!provider) {
 		return (ZIA_ERROR);
 	}
 
-	dpusm_pc_t *caps = NULL;
+	zia_caps_t caps;
 	if (zia_get_capabilities(provider, &caps) != ZIA_OK) {
 		return (ZIA_ERROR);
 	}
 
-	dpusm_mv_t mv = { .handle = *handle, .offset = 0 };
+	zia_mv_t mv = { .zm_handle = *handle, .zm_offset = 0 };
 	int ret = ZIA_ERROR;
 
-	if (caps->optional & DPUSM_OPTIONAL_COPY_TO_PTR) {
-		ret = dpusm_to_ret(dpusm->copy.to.ptr(&mv, buf, size));
+	if (caps.zc_optional & ZIA_OPTIONAL_COPY_TO_PTR) {
+		ret = ops->zo_copy_to_ptr(&mv, buf, size);
 	} else {
-		ret = dpusm_to_ret(dpusm->copy.to.generic(&mv, buf, size));
+		ret = ops->zo_copy_to_generic(&mv, buf, size);
 	}
 
 	/*
@@ -599,7 +538,7 @@ zia_onload(void **handle, void *buf, size_t size)
 	 */
 	zia_free(handle);
 
-	return (dpusm_to_ret(ret));
+	return (ret);
 #else
 	(void) handle; (void) buf; (void) size;
 	return (ZIA_DISABLED);
@@ -610,14 +549,16 @@ zia_onload(void **handle, void *buf, size_t size)
 static int
 zia_offload_generic_cb(void *buf, size_t len, void *priv)
 {
-	dpusm_mv_t *mv = (dpusm_mv_t *)priv;
+	const zia_ops_t *ops = zia_get_ops();
 
-	const int ret = dpusm->copy.from.generic(mv, buf, len);
-	if (dpusm_to_ret(ret) != ZIA_OK) {
+	zia_mv_t *mv = (zia_mv_t *)priv;
+
+	const int ret = ops->zo_copy_from_generic(mv, buf, len);
+	if (ret != ZIA_OK) {
 		return (ZIA_ERROR);
 	}
 
-	mv->offset += len;
+	mv->zm_offset += len;
 	return (0);
 }
 #endif
@@ -628,6 +569,8 @@ zia_offload_abd_offset(void *provider, abd_t *abd,
     size_t offset, size_t size, boolean_t *local_offload)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	/* already offloaded */
 	if (ABD_HANDLE(abd)) {
 		if (local_offload) {
@@ -638,12 +581,12 @@ zia_offload_abd_offset(void *provider, abd_t *abd,
 			return (ZIA_OK);
 		}
 
-		void *abd_provider = dpusm->extract(ABD_HANDLE(abd));
+		void *abd_provider = ops->zo_extract(ABD_HANDLE(abd));
 		return ((provider == abd_provider)?
 		    ZIA_OK:ZIA_PROVIDER_MISMATCH);
 	}
 
-	dpusm_pc_t *caps = NULL;
+	zia_caps_t caps;
 	if (zia_get_capabilities(provider, &caps) != ZIA_OK) {
 		return (ZIA_ERROR);
 	}
@@ -652,22 +595,21 @@ zia_offload_abd_offset(void *provider, abd_t *abd,
 		*local_offload = B_TRUE;
 	}
 
-	/* provider is checked by dpusm */
+	/* provider is checked by the accelerator interface */
 	void *handle = zia_alloc(provider, size);
 	if (!handle) {
 		return (ZIA_ERROR);
 	}
 
-	dpusm_mv_t mv = {
-		.handle = handle,
-		.offset = 0,
+	zia_mv_t mv = {
+		.zm_handle = handle,
+		.zm_offset = 0,
 	};
 
 	int ret = ZIA_FALLBACK;
 	if (abd_is_linear(abd) == B_TRUE) {
-		ret = dpusm->copy.from.generic(&mv,
+		ret = ops->zo_copy_from_generic(&mv,
 		    ABD_LINEAR_BUF(abd), size);
-		ret = dpusm_to_ret(ret);
 	} else if ((abd_is_linear_page(abd) == B_TRUE) ||
 	    (abd_is_gang(abd) == B_TRUE)) {
 		ret = abd_iterate_func(abd, offset, size,
@@ -678,12 +620,11 @@ zia_offload_abd_offset(void *provider, abd_t *abd,
 		}
 	} else if (abd_is_from_pages(abd) == B_TRUE) {
 #if defined(__linux__) && defined(_KERNEL)
-		if (dpusm->copy.from.scatterlist) {
+		if (ops->zo_copy_from_scatterlist) {
 			struct abd_scatter *scatter = &ABD_SCATTER(abd);
-			mv.offset = scatter->abd_offset;
-			ret = dpusm->copy.from.scatterlist(&mv,
+			mv.zm_offset = scatter->abd_offset;
+			ret = ops->zo_copy_from_scatterlist(&mv,
 			    scatter->abd_sgl, scatter->abd_nents, size);
-			ret = dpusm_to_ret(ret);
 		} else {
 #endif
 			ret = abd_iterate_func(abd, offset, size,
@@ -697,12 +638,11 @@ zia_offload_abd_offset(void *provider, abd_t *abd,
 #endif
 	} else {
 #if defined(__linux__) && defined(_KERNEL)
-		if (dpusm->copy.from.scatterlist) {
+		if (ops->zo_copy_from_scatterlist) {
 			struct abd_scatter *scatter = &ABD_SCATTER(abd);
-			mv.offset = scatter->abd_offset;
-			ret = dpusm->copy.from.scatterlist(&mv,
+			mv.zm_offset = scatter->abd_offset;
+			ret = ops->zo_copy_from_scatterlist(&mv,
 			    scatter->abd_sgl, scatter->abd_nents, size);
-			ret = dpusm_to_ret(ret);
 		} else {
 #endif
 			ret = abd_iterate_func(abd, offset, size,
@@ -735,7 +675,9 @@ int
 zia_offload_abd(void *provider, abd_t *abd,
     size_t size, boolean_t *local_offload, boolean_t lock)
 {
-	if (!dpusm || !provider) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops || !provider) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -761,14 +703,16 @@ zia_offload_abd(void *provider, abd_t *abd,
 static int
 zia_onload_generic_cb(void *buf, size_t len, void *priv)
 {
-	dpusm_mv_t *mv = (dpusm_mv_t *)priv;
+	const zia_ops_t *ops = zia_get_ops();
 
-	const int ret = dpusm->copy.to.generic(mv, buf, len);
-	if (dpusm_to_ret(ret) != ZIA_OK) {
+	zia_mv_t *mv = (zia_mv_t *)priv;
+
+	const int ret = ops->zo_copy_to_generic(mv, buf, len);
+	if (ret != ZIA_OK) {
 		return (ZIA_ERROR);
 	}
 
-	mv->offset += len;
+	mv->zm_offset += len;
 	return (0);
 }
 #endif
@@ -779,7 +723,14 @@ zia_onload_abd_offset(abd_t *abd, size_t offset,
     size_t size, boolean_t keep_handle)
 {
 #ifdef ZIA
-	if (!dpusm) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops) {
+		/* a handle without a table can never be onloaded */
+		if (abd && ABD_HANDLE(abd)) {
+			ABD_HANDLE(abd) = NULL;
+			return (ZIA_ACCELERATOR_DOWN);
+		}
 		return (ZIA_FALLBACK);
 	}
 
@@ -792,26 +743,25 @@ zia_onload_abd_offset(abd_t *abd, size_t offset,
 		return (ZIA_ERROR);
 	}
 
-	void *provider = dpusm->extract(handle);
+	void *provider = ops->zo_extract(handle);
 	if (!provider) {
 		return (ZIA_ERROR);
 	}
 
-	dpusm_pc_t *caps = NULL;
+	zia_caps_t caps;
 	if (zia_get_capabilities(provider, &caps) != ZIA_OK) {
 		return (ZIA_ERROR);
 	}
 
-	dpusm_mv_t mv = {
-		.handle = handle,
-		.offset = 0,
+	zia_mv_t mv = {
+		.zm_handle = handle,
+		.zm_offset = 0,
 	};
 
 	int ret = ZIA_FALLBACK;
 	if (abd_is_linear(abd) == B_TRUE) {
-		ret = dpusm->copy.to.generic(&mv,
+		ret = ops->zo_copy_to_generic(&mv,
 		    ABD_LINEAR_BUF(abd), size);
-		ret = dpusm_to_ret(ret);
 	} else if ((abd_is_linear_page(abd) == B_TRUE) ||
 	    (abd_is_gang(abd) == B_TRUE)) {
 		ret = abd_iterate_func(abd, offset, size,
@@ -822,12 +772,11 @@ zia_onload_abd_offset(abd_t *abd, size_t offset,
 		}
 	} else if (abd_is_from_pages(abd) == B_TRUE) {
 #if defined(__linux__) && defined(_KERNEL)
-		if (dpusm->copy.to.scatterlist) {
+		if (ops->zo_copy_to_scatterlist) {
 			struct abd_scatter *scatter = &ABD_SCATTER(abd);
-			mv.offset = scatter->abd_offset;
-			ret = dpusm->copy.to.scatterlist(&mv,
+			mv.zm_offset = scatter->abd_offset;
+			ret = ops->zo_copy_to_scatterlist(&mv,
 			    scatter->abd_sgl, scatter->abd_nents, size);
-			ret = dpusm_to_ret(ret);
 		} else {
 #endif
 			ret = abd_iterate_func(abd, offset, size,
@@ -841,12 +790,11 @@ zia_onload_abd_offset(abd_t *abd, size_t offset,
 #endif
 	} else {
 #if defined(__linux__) && defined(_KERNEL)
-		if (dpusm->copy.to.scatterlist) {
+		if (ops->zo_copy_to_scatterlist) {
 			struct abd_scatter *scatter = &ABD_SCATTER(abd);
-			mv.offset = scatter->abd_offset;
-			ret = dpusm->copy.to.scatterlist(&mv,
+			mv.zm_offset = scatter->abd_offset;
+			ret = ops->zo_copy_to_scatterlist(&mv,
 			    scatter->abd_sgl, scatter->abd_nents, size);
-			ret = dpusm_to_ret(ret);
 		} else {
 #endif
 			ret = abd_iterate_func(abd, offset, size,
@@ -914,7 +862,9 @@ int
 zia_cleanup_abd(abd_t *abd, size_t size,
     boolean_t local_offload, boolean_t lock)
 {
-	if (!dpusm) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -980,7 +930,9 @@ int
 zia_zero_fill(abd_t *abd, size_t offset, size_t size)
 {
 #ifdef ZIA
-	if (!dpusm) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -988,7 +940,7 @@ zia_zero_fill(abd_t *abd, size_t offset, size_t size)
 		return (ZIA_ERROR);
 	}
 
-	return (dpusm_to_ret(dpusm->zero_fill(ABD_HANDLE(abd), offset, size)));
+	return (ops->zo_zero_fill(ABD_HANDLE(abd), offset, size));
 #else
 	(void) abd; (void) offset; (void) size;
 	return (ZIA_DISABLED);
@@ -1002,13 +954,15 @@ zia_compress(zia_props_t *props, enum zio_compress c,
     uint8_t level, boolean_t *local_offload)
 {
 #ifdef ZIA
-	if (!dpusm || !props->provider) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops || !props->provider) {
 		return (ZIA_FALLBACK);
 	}
 
 	void *cbuf_handle = NULL;
 	*dst = abd_alloc_sametype(src, s_len);
-	const int rc = zia_compress_impl(dpusm, props, c, src, s_len,
+	const int rc = zia_compress_impl(ops, props, c, src, s_len,
 	    dst, &cbuf_handle, d_len, level, local_offload);
 	if (rc != ZIA_OK) {
 		abd_free(*dst);
@@ -1031,18 +985,20 @@ zia_decompress(zia_props_t *props, enum zio_compress c,
     uint8_t *level)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!props) {
 		return (ZIA_ERROR);
 	}
 
-	if (!dpusm || !props->provider) {
+	if (!ops || !props->provider) {
 		return (ZIA_FALLBACK);
 	}
 
 	/* check that decompression can be done before offloading src */
-	dpusm_pc_t *caps = NULL;
+	zia_caps_t caps;
 	if ((zia_get_capabilities(props->provider, &caps) != ZIA_OK) ||
-	    !(caps->decompress & compress_to_dpusm(c))) {
+	    !(caps.zc_decompress & ZIA_CAP_BIT(c))) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -1064,7 +1020,7 @@ zia_decompress(zia_props_t *props, enum zio_compress c,
 		return (ZIA_ERROR);
 	}
 	if (abd_is_linear(dst) == B_TRUE) {
-		dpusm->associate_handle(handle, ABD_LINEAR_BUF(dst));
+		ops->zo_associate_handle(handle, ABD_LINEAR_BUF(dst));
 	}
 
 	/*
@@ -1072,16 +1028,16 @@ zia_decompress(zia_props_t *props, enum zio_compress c,
 	 * passing in address of local variable is fine
 	 */
 	int cmp_level = *level;
-	ret = dpusm->decompress(compress_to_dpusm(c), &cmp_level,
+	ret = ops->zo_decompress(c, &cmp_level,
 	    ABD_HANDLE(src), s_len, ABD_HANDLE(dst), &d_len);
 	*level = cmp_level;
 
-	if (ret != DPUSM_OK) {
+	if (ret != ZIA_OK) {
 		zia_free_abd(dst, B_FALSE);
 		/* let abd_free clean up zio->io_abd */
 	}
 
-	return (dpusm_to_ret(ret));
+	return (ret);
 #else
 	(void) props; (void) c; (void) src; (void) s_len;
 	(void) dst; (void) d_len; (void) level;
@@ -1094,18 +1050,20 @@ zia_checksum_compute(void *provider, zio_cksum_t *dst, enum zio_checksum alg,
     zio_t *zio, uint64_t size, boolean_t *local_offload)
 {
 #ifdef ZIA
-	if (!dpusm || !provider) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops || !provider) {
 		return (ZIA_FALLBACK);
 	}
 
-	const dpusm_checksum_byteorder_t byteorder =
-	    byteorder_to_dpusm(BP_SHOULD_BYTESWAP(zio->io_bp));
+	const zio_byteorder_t byteorder = BP_SHOULD_BYTESWAP(zio->io_bp) ?
+	    ZIO_CHECKSUM_BYTESWAP : ZIO_CHECKSUM_NATIVE;
 
 	if (!ABD_HANDLE(zio->io_abd)) {
-		dpusm_pc_t *caps = NULL;
+		zia_caps_t caps;
 		if ((zia_get_capabilities(provider, &caps) != ZIA_OK) ||
-		    !(caps->checksum & checksum_to_dpusm(alg)) ||
-		    !(caps->checksum_byteorder & byteorder)) {
+		    !(caps.zc_checksum & ZIA_CAP_BIT(alg)) ||
+		    !(caps.zc_checksum_byteorder & ZIA_CAP_BIT(byteorder))) {
 			return (ZIA_FALLBACK);
 		}
 
@@ -1114,17 +1072,17 @@ zia_checksum_compute(void *provider, zio_cksum_t *dst, enum zio_checksum alg,
 			return (ZIA_ERROR);
 		}
 	} else {
-		void *old_provider = dpusm->extract(ABD_HANDLE(zio->io_abd));
+		void *old_provider = ops->zo_extract(ABD_HANDLE(zio->io_abd));
 		if (old_provider != provider) {
 			return (ZIA_PROVIDER_MISMATCH);
 		}
 
-		/* skip checks because dpusm will do them */
+		/* skip checks because the accelerator interface does them */
 	}
 
-	return (dpusm_to_ret(dpusm->checksum(checksum_to_dpusm(alg),
+	return (ops->zo_checksum(alg,
 	    byteorder, ABD_HANDLE(zio->io_abd), size, dst->zc_word,
-	    sizeof (dst->zc_word))));
+	    sizeof (dst->zc_word)));
 #else
 	(void) provider; (void) dst; (void) alg;
 	(void) zio; (void) size; (void) local_offload;
@@ -1137,7 +1095,9 @@ zia_checksum_error(enum zio_checksum alg, abd_t *abd,
     uint64_t size, int byteswap, zio_cksum_t *actual_cksum)
 {
 #ifdef ZIA
-	if (!dpusm) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -1149,12 +1109,12 @@ zia_checksum_error(enum zio_checksum alg, abd_t *abd,
 		return (ZIA_FALLBACK);
 	}
 
-	const dpusm_checksum_byteorder_t byteorder =
-	    byteorder_to_dpusm(byteswap);
+	const zio_byteorder_t byteorder = byteswap ?
+	    ZIO_CHECKSUM_BYTESWAP : ZIO_CHECKSUM_NATIVE;
 
-	return (dpusm_to_ret(dpusm->checksum(checksum_to_dpusm(alg),
+	return (ops->zo_checksum(alg,
 	    byteorder, ABD_HANDLE(abd), size, actual_cksum->zc_word,
-	    sizeof (actual_cksum->zc_word))));
+	    sizeof (actual_cksum->zc_word)));
 #else
 	(void) alg; (void) abd; (void) size;
 	(void) byteswap; (void) actual_cksum;
@@ -1167,6 +1127,8 @@ static boolean_t
 zia_can_raidz(raidz_row_t *rr, zia_props_t *props, uint64_t raidn,
     boolean_t rec, uint_t cksum, size_t *col_sizes)
 {
+	const zia_ops_t *ops = zia_get_ops();
+
 	/*
 	 * generation is needed for both
 	 * generation and reconstruction
@@ -1179,12 +1141,12 @@ zia_can_raidz(raidz_row_t *rr, zia_props_t *props, uint64_t raidn,
 		 * the provider knows whether or not
 		 * raidz functions are available
 		 */
-	    (dpusm->raid.can_compute(props->provider, raidn,
+	    (ops->zo_raid_can_compute(props->provider, raidn,
 	    rr->rr_cols - rr->rr_firstdatacol,
-	    col_sizes, rec == B_TRUE) == DPUSM_OK));
+	    col_sizes, rec == B_TRUE) == ZIA_OK));
 
 	if (good && (rec == B_TRUE)) {
-		dpusm_pc_t *caps = NULL;
+		zia_caps_t caps;
 		if (zia_get_capabilities(props->provider, &caps) != ZIA_OK) {
 			return (B_FALSE);
 		}
@@ -1199,7 +1161,7 @@ zia_can_raidz(raidz_row_t *rr, zia_props_t *props, uint64_t raidn,
 		    /* raidz reconstruction support was checked earlier */
 
 		    /* make sure the checksum is supported by the provider */
-		    (caps->checksum & checksum_to_dpusm(cksum)));
+		    (caps.zc_checksum & ZIA_CAP_BIT(cksum)));
 	}
 	return (good?B_TRUE:B_FALSE);
 }
@@ -1227,7 +1189,9 @@ zia_raidz_alloc(zio_t *zio, raidz_row_t *rr, boolean_t rec,
     uint_t cksum, boolean_t *local_offload)
 {
 #ifdef ZIA
-	if (!dpusm) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -1305,7 +1269,7 @@ zia_raidz_alloc(zio_t *zio, raidz_row_t *rr, boolean_t rec,
 	/* mirrored abds generate their own references to the columns */
 
 	/* set up raid context */
-	rr->rr_zia_handle = dpusm->raid.alloc(provider,
+	rr->rr_zia_handle = ops->zo_raid_alloc(provider,
 	    raidn, rr->rr_cols - raidn);
 
 	if (!rr->rr_zia_handle) {
@@ -1334,7 +1298,7 @@ zia_raidz_alloc(zio_t *zio, raidz_row_t *rr, boolean_t rec,
 		} else {
 			/* generating - create new columns */
 			handle =
-			    dpusm->alloc(provider, rc->rc_abd->abd_size);
+			    ops->zo_alloc(provider, rc->rc_abd->abd_size);
 		}
 
 		if (!handle) {
@@ -1342,12 +1306,12 @@ zia_raidz_alloc(zio_t *zio, raidz_row_t *rr, boolean_t rec,
 		}
 
 		if (abd_is_linear(rc->rc_abd) == B_TRUE) {
-			dpusm->associate_handle(handle,
+			ops->zo_associate_handle(handle,
 			    ABD_LINEAR_BUF(rc->rc_abd));
 		}
 
-		if (dpusm->raid.set_column(rr->rr_zia_handle,
-		    c, handle, rc->rc_size) != DPUSM_OK) {
+		if (ops->zo_raid_set_column(rr->rr_zia_handle,
+		    c, handle, rc->rc_size) != ZIA_OK) {
 			goto error;
 		}
 
@@ -1366,15 +1330,15 @@ zia_raidz_alloc(zio_t *zio, raidz_row_t *rr, boolean_t rec,
 		 * if the column is a gang abd, the handle
 		 * will point to the first child
 		 */
-		void *handle = dpusm->alloc_ref(ABD_HANDLE(zio->io_abd),
+		void *handle = ops->zo_alloc_ref(ABD_HANDLE(zio->io_abd),
 		    offset, rc->rc_size);
 
 		if (!handle) {
 			goto error;
 		}
 
-		if (dpusm->raid.set_column(rr->rr_zia_handle,
-		    c, handle, rc->rc_size) != DPUSM_OK) {
+		if (ops->zo_raid_set_column(rr->rr_zia_handle,
+		    c, handle, rc->rc_size) != ZIA_OK) {
 			goto error;
 		}
 
@@ -1419,7 +1383,9 @@ int
 zia_raidz_free(raidz_row_t *rr, boolean_t onload_parity)
 {
 #ifdef ZIA
-	if (!dpusm) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -1450,7 +1416,7 @@ zia_raidz_free(raidz_row_t *rr, boolean_t onload_parity)
 	}
 
 	ret = zia_worst_error(ret,
-	    dpusm_to_ret(dpusm->raid.free(
+	    (ops->zo_raid_free(
 	    rr->rr_zia_handle)));
 	rr->rr_zia_handle = NULL;
 
@@ -1465,7 +1431,9 @@ int
 zia_raidz_gen(raidz_row_t *rr)
 {
 #ifdef ZIA
-	if (!dpusm) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -1474,7 +1442,7 @@ zia_raidz_gen(raidz_row_t *rr)
 		return (ZIA_ERROR);
 	}
 
-	return (dpusm_to_ret(dpusm->raid.gen(rr->rr_zia_handle)));
+	return (ops->zo_raid_gen(rr->rr_zia_handle));
 #else
 	(void) rr;
 	return (ZIA_FALLBACK);
@@ -1504,6 +1472,8 @@ int
 zia_raidz_new_parity(zio_t *zio, raidz_row_t *rr, uint64_t c)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!zio || !rr || (c >= rr->rr_firstdatacol)) {
 		return (ZIA_ERROR);
 	}
@@ -1530,19 +1500,19 @@ zia_raidz_new_parity(zio_t *zio, raidz_row_t *rr, uint64_t c)
 	}
 
 	if (abd_is_linear(rc->rc_abd) == B_TRUE) {
-		dpusm->associate_handle(new_parity_handle,
+		ops->zo_associate_handle(new_parity_handle,
 		    ABD_LINEAR_BUF(rc->rc_abd));
 	}
 
-	const int ret = dpusm->raid.set_column(rr->rr_zia_handle,
+	const int ret = ops->zo_raid_set_column(rr->rr_zia_handle,
 	    c, new_parity_handle, rc->rc_size);
-	if (ret == DPUSM_OK) {
+	if (ret == ZIA_OK) {
 		ABD_HANDLE(rc->rc_abd) = new_parity_handle;
 	} else {
 		zia_free(&new_parity_handle);
 	}
 
-	return (dpusm_to_ret(ret));
+	return (ret);
 #else
 	(void) zio; (void) rr; (void) c;
 	return (ZIA_FALLBACK);
@@ -1553,6 +1523,8 @@ int
 zia_raidz_cmp(abd_t *lhs, abd_t *rhs, int *diff)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!lhs || !rhs || !diff) {
 		return (ZIA_ERROR);
 	}
@@ -1568,7 +1540,7 @@ zia_raidz_cmp(abd_t *lhs, abd_t *rhs, int *diff)
 		return (ZIA_ERROR);
 	}
 
-	return (dpusm_to_ret(dpusm->raid.cmp(lhs_handle, rhs_handle, diff)));
+	return (ops->zo_raid_cmp(lhs_handle, rhs_handle, diff));
 #else
 	(void) lhs; (void) rhs; (void) diff;
 	return (ZIA_FALLBACK);
@@ -1579,7 +1551,9 @@ int
 zia_raidz_rec(raidz_row_t *rr, int *t, int nt)
 {
 #ifdef ZIA
-	if (!dpusm) {
+	const zia_ops_t *ops = zia_get_ops();
+
+	if (!ops) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -1588,7 +1562,7 @@ zia_raidz_rec(raidz_row_t *rr, int *t, int nt)
 		return (ZIA_FALLBACK);
 	}
 
-	return (dpusm_to_ret(zia_raidz_rec_impl(dpusm, rr, t, nt)));
+	return (zia_raidz_rec_impl(ops, rr, t, nt));
 #else
 	(void) rr; (void) t; (void) nt;
 	return (ZIA_FALLBACK);
@@ -1617,13 +1591,14 @@ zia_file_open(vdev_t *vdev, const char *path,
 	}
 
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
 	void *provider = zia_props->provider;
-	if (!dpusm || !provider) {
+	if (!ops || !provider) {
 		return (ZIA_FALLBACK);
 	}
 
 	if (!VDEV_HANDLE(vdev)) {
-		VDEV_HANDLE(vdev) = dpusm->file.open(provider,
+		VDEV_HANDLE(vdev) = ops->zo_file_open(provider,
 		    path, flags, mode);
 	}
 
@@ -1639,11 +1614,13 @@ zia_file_write(vdev_t *vdev, abd_t *abd, ssize_t size,
     loff_t offset, uint8_t ashift, ssize_t *resid, int *err)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!vdev || !abd) {
 		return (ZIA_ERROR);
 	}
 
-	if (!dpusm || !VDEV_HANDLE(vdev) || !ABD_HANDLE(abd)) {
+	if (!ops || !VDEV_HANDLE(vdev) || !ABD_HANDLE(abd)) {
 		return (ZIA_FALLBACK);
 	}
 
@@ -1654,7 +1631,7 @@ zia_file_write(vdev_t *vdev, abd_t *abd, ssize_t size,
 	size_t data_size = size;
 	size_t trailing_zeros = 0;
 
-	return (dpusm->file.write(VDEV_HANDLE(vdev), ABD_HANDLE(abd),
+	return (ops->zo_file_write(VDEV_HANDLE(vdev), ABD_HANDLE(abd),
 	    data_size, trailing_zeros, offset, ashift, resid, err));
 #else
 	(void) vdev; (void) abd; (void) size;
@@ -1667,15 +1644,17 @@ int
 zia_file_close(vdev_t *vdev)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!vdev) {
 		return (ZIA_ERROR);
 	}
 
-	if (!dpusm || !VDEV_HANDLE(vdev)) {
+	if (!ops || !VDEV_HANDLE(vdev)) {
 		return (ZIA_FALLBACK);
 	}
 
-	dpusm->file.close(VDEV_HANDLE(vdev));
+	ops->zo_file_close(VDEV_HANDLE(vdev));
 	VDEV_HANDLE(vdev) = NULL;
 
 	return (ZIA_OK);
@@ -1692,6 +1671,8 @@ zia_disk_open(vdev_t *vdev, const char *path,
     struct block_device *bdev)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!vdev || !vdev->vdev_spa) {
 		return (ZIA_ERROR);
 	}
@@ -1699,12 +1680,12 @@ zia_disk_open(vdev_t *vdev, const char *path,
 	zia_props_t *props = zia_get_props(vdev->vdev_spa);
 	void *provider = props->provider;
 
-	if (!dpusm || !provider || props->disk_write != 1) {
+	if (!ops || !provider || props->disk_write != 1) {
 		return (ZIA_FALLBACK);
 	}
 
 	if (!VDEV_HANDLE(vdev)) {
-		VDEV_HANDLE(vdev) = dpusm->disk.open(provider,
+		VDEV_HANDLE(vdev) = ops->zo_disk_open(provider,
 		    path, bdev);
 	}
 
@@ -1719,15 +1700,17 @@ int
 zia_disk_invalidate(vdev_t *vdev)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!vdev) {
 		return (ZIA_ERROR);
 	}
 
-	if (!dpusm || !VDEV_HANDLE(vdev)) {
+	if (!ops || !VDEV_HANDLE(vdev)) {
 		return (ZIA_FALLBACK);
 	}
 
-	return (dpusm_to_ret(dpusm->disk.invalidate(VDEV_HANDLE(vdev))));
+	return (ops->zo_disk_invalidate(VDEV_HANDLE(vdev)));
 #else
 	(void) vdev;
 	return (ZIA_FALLBACK);
@@ -1738,23 +1721,25 @@ int
 zia_disk_write(vdev_t *vdev, zio_t *zio, int flags, boolean_t *local_offload)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!vdev || !zio || !zio->io_abd || !local_offload) {
 		return (EIO);
 	}
 
-	if (!dpusm || !VDEV_HANDLE(vdev)) {
+	if (!ops || !VDEV_HANDLE(vdev)) {
 		return (EIO);
 	}
 
 	zia_props_t *props = zia_get_props(zio->io_spa);
 
-	dpusm_pc_t *caps = NULL;
+	zia_caps_t caps;
 	if (zia_get_capabilities(props->provider, &caps) != ZIA_OK) {
 		return (EIO);
 	}
 
 	/* cannot offload disk_write */
-	if ((caps->io & DPUSM_IO_DISK) == 0) {
+	if ((caps.zc_io & ZIA_IO_DISK) == 0) {
 		return (EIO);
 	}
 
@@ -1774,7 +1759,7 @@ zia_disk_write(vdev_t *vdev, zio_t *zio, int flags, boolean_t *local_offload)
 	}
 
 	/* returns E errors */
-	return (dpusm->disk.write(VDEV_HANDLE(vdev), ABD_HANDLE(zio->io_abd),
+	return (ops->zo_disk_write(VDEV_HANDLE(vdev), ABD_HANDLE(zio->io_abd),
 	    zio->io_size, 0, zio->io_offset, flags,
 	    zia_disk_write_completion, zio));
 #else
@@ -1788,15 +1773,17 @@ int
 zia_disk_flush(vdev_t *vdev, zio_t *zio)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!vdev || !zio) {
 		return (EIO);
 	}
 
-	if (!dpusm || !VDEV_HANDLE(vdev)) {
+	if (!ops || !VDEV_HANDLE(vdev)) {
 		return (EIO);
 	}
 
-	return (dpusm->disk.flush(VDEV_HANDLE(vdev),
+	return (ops->zo_disk_flush(VDEV_HANDLE(vdev),
 	    zia_disk_flush_completion, zio));
 #else
 	(void) vdev; (void) zio;
@@ -1808,6 +1795,8 @@ int
 zia_disk_close(vdev_t *vdev)
 {
 #ifdef ZIA
+	const zia_ops_t *ops = zia_get_ops();
+
 	if (!vdev) {
 		return (ZIA_ERROR);
 	}
@@ -1815,12 +1804,12 @@ zia_disk_close(vdev_t *vdev)
 	void *handle = VDEV_HANDLE(vdev);
 	VDEV_HANDLE(vdev) = NULL;
 
-	if (!dpusm || !handle) {
+	if (!ops || !handle) {
 		return (ZIA_FALLBACK);
 	}
 
 	/* trust that ZFS handles closing disks once */
-	dpusm->disk.close(handle);
+	ops->zo_disk_close(handle);
 
 	return (ZIA_OK);
 #else
