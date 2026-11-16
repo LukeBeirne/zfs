@@ -37,8 +37,10 @@ int zalgo_##ty##_register(zalgo_##ty##_subtype_t subtype, const char *id, \
     const char *desc, const zalgo_##ty##_ops_t *ops);			\
 int zalgo_##ty##_register_flags(zalgo_##ty##_subtype_t subtype,	\
     const char *id, const char *desc, const zalgo_##ty##_ops_t *ops,	\
-    uint_t flags);							\
+	uint_t flags);							\
 zalgo_##ty##_hold_t *zalgo_##ty##_hold(zalgo_##ty##_subtype_t subtype);	\
+zalgo_##ty##_hold_t *zalgo_##ty##_hold_fallback(				\
+    zalgo_##ty##_subtype_t subtype);					\
 zalgo_##ty##_hold_t *zalgo_##ty##_hold_spa(spa_t *spa,			\
     zalgo_##ty##_subtype_t subtype);					\
 void zalgo_##ty##_rele(zalgo_##ty##_hold_t *hold);			\
@@ -159,6 +161,10 @@ typedef struct {
 
 ZALGO_DECLARE_API(checksum)
 
+int zalgo_checksum_once_fallback(
+    zalgo_checksum_subtype_t subtype, abd_t *abd, size_t datalen,
+    zio_cksum_t *checksum);
+
 #define	zalgo_checksum_init(hold, ...)	\
 	(hold)->zh_ops->zgc_op_init(__VA_ARGS__)
 #define	zalgo_checksum_update(hold, ...)	\
@@ -210,6 +216,8 @@ ZALGO_DECLARE_API(cipher)
 void zalgo_init(void);
 void zalgo_fini(void);
 
+#define	ZALGO_FALLBACK	EAGAIN
+
 void zalgo_bench_all(void);
 
 int zalgo_shim_fletcher_register(void);
@@ -219,6 +227,8 @@ int zalgo_shim_openssl_register(void);
 int zalgo_shim_my_fletcher_register(void);
 #ifdef DPUSM
 int zalgo_shim_dpusm_register(void);
+int zalgo_shim_dpusm_bind(const char *provider_name);
+void zalgo_shim_dpusm_fini(void);
 #endif
 
 #endif

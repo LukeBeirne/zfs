@@ -109,6 +109,11 @@ zalgo_checksum_bench_cb(void *arg)
 uint64_t
 zalgo_checksum_bench(zalgo_checksum_hold_t *hold)
 {
+	if (zalgo_checksum_ops(hold)->zgc_op_init == NULL ||
+	    zalgo_checksum_ops(hold)->zgc_op_update == NULL ||
+	    zalgo_checksum_ops(hold)->zgc_op_final == NULL)
+		return (0);
+
 	uint8_t *data = vmem_alloc(ZALGO_BENCH_DATA_LEN, KM_SLEEP);
 	if (data == NULL) {
 		cmn_err(CE_NOTE, "%s: out of memory?", __FUNCTION__);

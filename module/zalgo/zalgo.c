@@ -211,6 +211,24 @@ zalgo_hold(zalgo_type_t type, uint_t subtype)
 	return (node);
 }
 
+static void *
+zalgo_hold_fallback(zalgo_type_t type, uint_t subtype)
+{
+	ASSERT3U(type, <, ZG_TYPE_MAX);
+	ASSERT3U(subtype, <, zalgo_subtype_max[type]);
+
+	zalgo_registry_t *reg = &zg_registry[type][subtype];
+	zalgo_node_t *node;
+
+	mutex_enter(&zg_registry_lock);
+	node = reg->zr_fallback;
+	if (node != NULL)
+		atomic_inc_64(&node->zgn_refcount);
+	mutex_exit(&zg_registry_lock);
+
+	return (node);
+}
+
 static void
 zalgo_rele(void *nodep)
 {
@@ -346,6 +364,11 @@ zalgo_##ty##_hold(zalgo_##ty##_subtype_t subtype)			\
 {									\
 	return (zalgo_hold(ZG_##en, subtype));				\
 }									\
+zalgo_##ty##_hold_t *						\
+zalgo_##ty##_hold_fallback(zalgo_##ty##_subtype_t subtype)	\
+{									\
+	return (zalgo_hold_fallback(ZG_##en, subtype));					\
+}									\
 									\
 void									\
 zalgo_##ty##_rele(zalgo_##ty##_hold_t *hold)				\
@@ -364,6 +387,29 @@ ZALGO_DEFINE_API(mac, MAC)
 ZALGO_DEFINE_API(digest, DIGEST)
 ZALGO_DEFINE_API(checksum, CHECKSUM)
 ZALGO_DEFINE_API(cipher, CIPHER)
+
+int
+zalgo_checksum_once_fallback(zalgo_checksum_subtype_t subtype,
+    abd_t *abd, size_t datalen, zio_cksum_t *checksum)
+{
+	zalgo_checksum_hold_t *hold = zalgo_checksum_hold(subtype);
+	int error;
+
+	if (hold == NULL)
+		goto fallback;
+	error = zalgo_checksum_once_abd(hold, abd, datalen, checksum);
+	zalgo_checksum_rele(hold);
+	if (error == 0)
+		return (0);
+
+fallback:
+	hold = zalgo_checksum_hold_fallback(subtype);
+	if (hold == NULL)
+		return (ZALGO_FALLBACK);
+	error = zalgo_checksum_once_abd(hold, abd, datalen, checksum);
+	zalgo_checksum_rele(hold);
+	return (error == 0 ? 0 : ZALGO_FALLBACK);
+}
 
 /* ========== */
 

@@ -20,6 +20,7 @@
 #include <sys/spa_impl.h>
 #include <sys/zio.h>
 #include <sys/zio_checksum.h>
+#include <sys/zalgo.h>
 #include <sys/zil.h>
 #include <sys/abd.h>
 #include <zfs_fletcher.h>
@@ -123,7 +124,6 @@ abd_fletcher_4_native(abd_t *abd, uint64_t size,
     const void *ctx_template, zio_cksum_t *zcp)
 {
 	(void) ctx_template;
-#if 0
 	fletcher_4_ctx_t ctx;
 
 	zio_abd_checksum_data_t acd = {
@@ -132,11 +132,10 @@ abd_fletcher_4_native(abd_t *abd, uint64_t size,
 		.acd_ctx	= &ctx
 	};
 
+	if (zalgo_checksum_once_fallback(ZG_CHECKSUM_FLETCHER4,
+	    abd, size, zcp) == 0)
+		return;
 	abd_fletcher_4_impl(abd, size, &acd);
-#endif
-	zalgo_checksum_hold_t *hold = zalgo_checksum_hold(ZG_CHECKSUM_FLETCHER4);
-	zalgo_checksum_once_abd(hold, abd, size, zcp);
-	zalgo_checksum_rele(hold);
 }
 
 void
@@ -152,6 +151,9 @@ abd_fletcher_4_byteswap(abd_t *abd, uint64_t size,
 		.acd_ctx	= &ctx
 	};
 
+	if (zalgo_checksum_once_fallback(ZG_CHECKSUM_FLETCHER4_SWAP,
+	    abd, size, zcp) == 0)
+		return;
 	abd_fletcher_4_impl(abd, size, &acd);
 }
 
