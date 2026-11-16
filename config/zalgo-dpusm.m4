@@ -27,8 +27,8 @@ AC_DEFUN([ZFS_AC_CONFIG_ZALGO_DPUSM], [
 
 				ZALGO_DPUSM_CPPFLAGS="-DZALGO_DPUSM=1 -I$DPUSM_ROOT/include"
 				ZALGO_DPUSM_ENABLED=yes
-				AC_DEFINE([HAVE_ZALGO_DPUSM], [1],
-					[Define when Zalgo DPUSM providers are enabled.])
+				AC_DEFINE([DPUSM], [1],
+					[Define when DPUSM support is enabled.])
 				AC_MSG_NOTICE([Zalgo DPUSM support enabled using $DPUSM_ROOT])
 			])
 		], [

@@ -410,7 +410,7 @@ kernel_init(int mode)
 	zalgo_shim_icp_register();
 	zalgo_shim_openssl_register();
 	zalgo_shim_fletcher_register();
-#ifdef HAVE_ZALGO_DPUSM
+#ifdef DPUSM
 	zalgo_shim_dpusm_register();
 #endif
 	zalgo_bench_all();

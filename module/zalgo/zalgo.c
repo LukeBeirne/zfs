@@ -119,6 +119,7 @@ typedef struct {
 	const char	*zgn_id;
 	const char	*zgn_desc;
 	uint_t		zgn_subtype;
+	uint_t		zgn_flags;
 	uint64_t	zgn_score;
 	uint64_t	zgn_refcount;
 	list_node_t	zgn_link;
@@ -126,6 +127,7 @@ typedef struct {
 
 typedef struct {
 	zalgo_node_t	*zr_current;
+	zalgo_node_t	*zr_fallback;
 	zalgo_node_t	*zr_best;
 	list_t		zr_nodes;
 } zalgo_registry_t;
@@ -139,8 +141,8 @@ static zalgo_registry_t *zg_registry[ZG_TYPE_MAX] = {};
 static kmutex_t zg_registry_lock;
 
 static int
-zalgo_register(zalgo_type_t type, uint_t subtype, const char *id,
-    const char *desc, const void *ops)
+zalgo_register_flags(zalgo_type_t type, uint_t subtype, const char *id,
+    const char *desc, const void *ops, uint_t flags)
 {
 	ASSERT3U(type, <, ZG_TYPE_MAX);
 	ASSERT3U(subtype, <, zalgo_subtype_max[type]);
@@ -155,6 +157,7 @@ zalgo_register(zalgo_type_t type, uint_t subtype, const char *id,
 	node->zgn_id = id;
 	node->zgn_desc = desc;
 	node->zgn_ops = ops;
+	node->zgn_flags = flags;
 	node->zgn_score = 0;
 	node->zgn_refcount = 2;
 
@@ -176,6 +179,11 @@ zalgo_register(zalgo_type_t type, uint_t subtype, const char *id,
 	    (atomic_cas_ptr(&reg->zr_current, NULL, node) == NULL);
 	if (!is_current)
 		atomic_dec_64(&node->zgn_refcount);
+	if ((flags & ZALGO_PROVIDER_ACCELERATED) == 0 &&
+	    reg->zr_fallback == NULL) {
+		reg->zr_fallback = node;
+		atomic_inc_64(&node->zgn_refcount);
+	}
 	mutex_exit(&zg_registry_lock);
 
 	cmn_err(CE_NOTE, "zalgo: registered '%s' (%s) for %s:%s%s",
@@ -268,6 +276,8 @@ zalgo_init(void)
 		    subtype < zalgo_subtype_max[type]; subtype++) {
 			zalgo_registry_t *reg = &zg_registry[type][subtype];
 			reg->zr_current = NULL;
+			reg->zr_fallback = NULL;
+			reg->zr_best = NULL;
 			list_create(&reg->zr_nodes, sizeof (zalgo_node_t),
 			    offsetof(zalgo_node_t, zgn_link));
 		}
@@ -292,6 +302,12 @@ zalgo_fini(void)
 				if (atomic_cas_ptr(&reg->zr_current,
 				    node, NULL) == node)
 					atomic_dec_64(&node->zgn_refcount);
+				if (atomic_cas_ptr(&reg->zr_fallback,
+				    node, NULL) == node)
+					atomic_dec_64(&node->zgn_refcount);
+				if (atomic_cas_ptr(&reg->zr_best,
+				    node, NULL) == node)
+					atomic_dec_64(&node->zgn_refcount);
 				ASSERT3U(node->zgn_refcount, ==, 1);
 				kmem_free(node, sizeof (zalgo_node_t));
 			}
@@ -307,10 +323,21 @@ zalgo_fini(void)
 
 #define	ZALGO_DEFINE_API(ty, en)					\
 int									\
+zalgo_##ty##_register_flags(zalgo_##ty##_subtype_t subtype,	\
+    const char *id, const char *desc, const zalgo_##ty##_ops_t *ops,	\
+    uint_t flags)						\
+{									\
+	return (zalgo_register_flags(ZG_##en, subtype, id, desc, ops,	\
+	    flags));							\
+}									\
+EXPORT_SYMBOL(zalgo_##ty##_register_flags);						\
+									\
+int									\
 zalgo_##ty##_register(zalgo_##ty##_subtype_t subtype, const char *id,	\
     const char *desc, const zalgo_##ty##_ops_t *ops)			\
 {									\
-	return (zalgo_register(ZG_##en, subtype, id, desc, ops));	\
+	return (zalgo_register_flags(ZG_##en, subtype, id, desc, ops,	\
+	    ZALGO_PROVIDER_SOFTWARE));					\
 }									\
 EXPORT_SYMBOL(zalgo_##ty##_register);					\
 									\
@@ -367,14 +394,39 @@ zalgo_bench(zalgo_type_t type, uint_t subtype)
 		if (best == NULL || node->zgn_score > best->zgn_score)
 			best = node;
 	}
+	zalgo_node_t *fallback = NULL;
+	for (zalgo_node_t *node = list_head(&reg->zr_nodes); node != NULL;
+	    node = list_next(&reg->zr_nodes, node)) {
+		if ((node->zgn_flags & ZALGO_PROVIDER_ACCELERATED) == 0 &&
+		    (fallback == NULL || node->zgn_score > fallback->zgn_score))
+			fallback = node;
+	}
+	/* One reference for the current pointer. */
 	if (best != NULL)
 		atomic_inc_64(&best->zgn_refcount);
+	/* One reference for a changed best pointer. */
+	if (best != NULL && best != reg->zr_best)
+		atomic_inc_64(&best->zgn_refcount);
+	/* One reference for a changed software fallback pointer. */
+	if (fallback != NULL && fallback != reg->zr_fallback)
+		atomic_inc_64(&fallback->zgn_refcount);
 	mutex_exit(&zg_registry_lock);
 
 	if (best == NULL)
 		return;
 
-	reg->zr_best = best;
+	if (reg->zr_best != best) {
+		zalgo_node_t *old_best = reg->zr_best;
+		reg->zr_best = best;
+		if (old_best != NULL)
+			VERIFY3U(atomic_dec_64_nv(&old_best->zgn_refcount), >, 0);
+	}
+	if (reg->zr_fallback != fallback) {
+		zalgo_node_t *old_fallback = reg->zr_fallback;
+		reg->zr_fallback = fallback;
+		if (old_fallback != NULL)
+			VERIFY3U(atomic_dec_64_nv(&old_fallback->zgn_refcount), >, 0);
+	}
 	zalgo_node_t *old = zg_atomic_swap_ptr(&reg->zr_current, best);
 	if (old == NULL) {
 		cmn_err(CE_NOTE,

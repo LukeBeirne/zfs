@@ -32,6 +32,99 @@ ZFS and DPUSM, but the design is not settled.
 - [ ] Document how subtype selection and provider benchmarking interact with
       DPUSM setup and device state.
 
+### Algorithm implementation and test-provider scope
+
+- [x] Do not require a new, dedicated DPUSM provider implementation for each
+      Zalgo/Z.I.A. algorithm.  For initial validation, use the
+      `zia_software_provider` once its implementation is available, or adapt
+      an existing hardware accelerator provider that already works with the
+      original Z.I.A. implementation.
+- [ ] Keep any provider adapter, capability mapping, and lifetime handling
+      needed to expose those providers through Zalgo separate from writing a
+      new DPUSM algorithm implementation.
+- [x] Treat asynchronous Z.I.A. as out of scope for this integration.  It is
+      developed in a separate worktree and should not be folded into the
+      synchronous Zalgo/DPUSM checklist or implementation plan.
+- [x] Do not add benchmarking infrastructure for Zalgo operation types that
+      do not already have a meaningful benchmark.  Where a kstat score is
+      required for registry or reporting consistency, use a score of zero
+      rather than inventing a benchmark for the operation.
+
+### Agreed dispatch and fallback model
+
+- [x] Keep algorithm selection and implementation selection separate.  The
+      dataset property or existing block metadata selects the algorithm
+      subtype (for example, `checksum=sha256` selects checksum/SHA-256 and
+      `compression=lz4` selects compression/LZ4); pool context only selects
+      which eligible provider implements that subtype.
+- [x] Give each algorithm-specific registry entry an independently selected
+      `zr_current` provider and `zr_fallback` software provider.  A DPUSM
+      failure must
+      not overwrite or replace the current provider merely to recover from
+      that operation.
+- [x] Use the fallback hierarchy:
+      `DPUSM Zalgo provider -> software Zalgo provider -> normal ZFS
+      implementation`.  If no software Zalgo provider exists, the ZFS
+      integration must invoke the existing implementation for that algorithm.
+- [x] Treat all non-success DPUSM operation results as ordinary acceleration
+      failures for the initial implementation.  Clean up the DPUSM operation
+      and retry the same algorithm through the software Zalgo provider where
+      possible; more specific error classification can be added later.
+- [x] For the initial DPUSM path, copy data to provider memory before the
+      operation and copy results back afterward on every call.  Do not require
+      persistent offloaded ABD state or lazy onload behavior yet.
+- [x] The DPUSM operation wrapper owns the temporary provider buffers used for
+      copying and may free them after a failed hardware operation.  The Zalgo
+      fallback path must receive a valid source and clean destination state.
+- [x] Treat provider invalidation as an operation failure that returns to the
+      same fallback path.  DPUSM's provider validity checks are expected to
+      report the invalidation through the operation result.
+- [x] Add provider classification as registration metadata rather than
+      inferring it from provider names or requiring new algorithm subtypes.
+      Prefer an explicit accelerated/software provider flag, with the
+      existing simple registration API retaining a low-friction default for
+      providers that do not need special classification.  Use that metadata
+      to identify the best software fallback independently of the overall
+      best/current provider.
+- [x] Do not treat the absence of a software Zalgo provider as an integration
+      failure.  It is a required final fallback to the established ZFS
+      implementation, not a reason to change the selected algorithm.
+- [ ] Implement pool-aware operation-time dispatch so the pool's DPUSM gate
+      and configured provider are consulted without changing the
+      dataset/block-selected subtype.  This is the implementation issue
+      behind the pool-context dispatch design, not a change to the algorithm
+      selection model.
+- [ ] Hold the selected Zalgo node and DPUSM provider handle through the
+      complete operation and any software retry, including invalidation and
+      provider-replacement races.
+- [ ] Define a compression operation result that distinguishes provider
+      failure from successful incompressible input.  A compressed-size return
+      value alone must not make a hardware failure look like a valid
+      uncompressed result.
+
+### Configuration scope and policy
+
+- [x] Keep ZFS algorithm selection at the dataset level: dataset properties
+      such as `checksum` and `compression` select the algorithm and on-disk
+      format required by the operation.
+- [x] Keep DPUSM provider selection and operation gates at the pool level,
+      following the existing Z.I.A. model.  The initial properties are
+      `dpusm_provider`, `dpusm_compress`, `dpusm_decompress`,
+      `dpusm_checksum`, and per-width RAIDZ generation/reconstruction gates.
+- [x] Define `dpusm_<operation>=off` as disabling DPUSM acceleration only;
+      it must not disable the corresponding ZFS algorithm or integrity
+      operation.
+- [x] Define the fallback hierarchy as: dataset/block algorithm selection,
+      pool DPUSM gate and provider capability, then the normal Zalgo/software
+      provider.  A missing or invalid DPUSM provider must not prevent normal
+      ZFS operation.
+- [ ] Connect pool policy to operation-time Zalgo holds so separate pools can
+      use different DPUSM policies without changing Zalgo's global default.
+- [ ] Add runtime provider binding, capability checks, and safe replacement
+      when `dpusm_provider` changes.
+- [ ] Add user documentation and tests for dataset algorithm settings
+      interacting with pool-level DPUSM settings.
+
 ## DPUSM shim investigation
 
 - [ ] Prototype `module/zalgo/zalgo_shim_dpusm.c` as an optional in-tree
@@ -56,12 +149,33 @@ ZFS and DPUSM, but the design is not settled.
       provider, and define which failures are retryable.
 - [ ] Restart retries from the original input with a fresh context rather
       than continuing a partially completed operation.
+- [ ] Add an explicit DPUSM-to-software fallback path for every accelerated
+      operation.  A DPUSM provider failure must retry the best available
+      software Zalgo provider for the same algorithm before returning an
+      error, where the surrounding ZFS operation permits retry.
+- [ ] Model the Z.I.A. `ZIA_FALLBACK` behavior for DPUSM failures without
+      conflating it with an algorithm failure: unsupported, unavailable,
+      invalidated, timed-out, or hardware-error results should select the
+      software implementation, while malformed compressed data,
+      checksum mismatches, and authentication failures must remain data
+      errors.
+- [ ] Ensure a DPUSM failure leaves a valid retry input and a clean output
+      destination.  Hardware may partially consume or modify buffers, so a
+      retry must restore or preserve the original data and reset output
+      ownership/length state.
+- [x] Retain or identify the best software provider for each algorithm
+      independently of the currently selected DPUSM provider.  DPUSM
+      selection must not replace the software fallback needed for recovery.
 - [ ] Add provider health, quarantine, or re-selection behavior if needed.
 - [ ] Distinguish provider failure from ordinary checksum mismatch,
       authentication failure, unsupported request, and device unavailability.
 - [ ] Preserve normal ZFS redundancy, repair, and error-reporting behavior.
 
 ## Asynchronous execution
+
+This section is intentionally out of scope for the current integration.  The
+asynchronous Z.I.A. work is maintained in a separate worktree; revisit these
+items only when that work is explicitly brought into this branch.
 
 - [ ] Determine whether asynchronous DPUSM work fits the current Zalgo
       operation tables or requires new async operation interfaces.
@@ -131,8 +245,10 @@ ZFS and DPUSM, but the design is not settled.
 - [ ] Test linear and ABD inputs, small and large requests, alignment edges,
       concurrent requests, and partial failures.
 - [ ] Compare correctness against the existing CPU and DPUSM implementations.
-- [ ] Benchmark CPU and Zalgo-DPUSM paths under matching
-      workloads and report setup overhead and variability.
+- [ ] Compare CPU and Zalgo-DPUSM correctness and behavior under matching
+      workloads.  Add performance measurements only for operation types that
+      already have Zalgo benchmarks; report a zero kstat score for operation
+      types without a benchmark when a score is required.
 - [ ] Validate normal ZFS pool I/O, checksum verification, repair, encryption,
       and recovery behavior on disposable test storage.
 

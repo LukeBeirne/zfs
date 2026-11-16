@@ -21,6 +21,12 @@
 #include <sys/abd.h>		/* abd_t */
 #include <sys/spa_checksum.h>	/* zio_cksum_t */
 
+typedef struct spa spa_t;
+
+/* Provider registration flags.  Existing registration calls are software. */
+#define	ZALGO_PROVIDER_SOFTWARE	0
+#define	ZALGO_PROVIDER_ACCELERATED	(1U << 0)
+
 #define	ZALGO_DECLARE_API(ty)						\
 typedef struct {							\
 	const zalgo_##ty##_ops_t	*zh_ops;			\
@@ -29,7 +35,12 @@ typedef struct {							\
 } zalgo_##ty##_hold_t;							\
 int zalgo_##ty##_register(zalgo_##ty##_subtype_t subtype, const char *id, \
     const char *desc, const zalgo_##ty##_ops_t *ops);			\
+int zalgo_##ty##_register_flags(zalgo_##ty##_subtype_t subtype,	\
+    const char *id, const char *desc, const zalgo_##ty##_ops_t *ops,	\
+    uint_t flags);							\
 zalgo_##ty##_hold_t *zalgo_##ty##_hold(zalgo_##ty##_subtype_t subtype);	\
+zalgo_##ty##_hold_t *zalgo_##ty##_hold_spa(spa_t *spa,			\
+    zalgo_##ty##_subtype_t subtype);					\
 void zalgo_##ty##_rele(zalgo_##ty##_hold_t *hold);			\
 int zalgo_##ty##_select(zalgo_##ty##_subtype_t subtype, const char *id); \
 uint64_t zalgo_##ty##_bench(zalgo_##ty##_hold_t *hold);			\
@@ -206,7 +217,7 @@ int zalgo_shim_freebsd_register(void);
 int zalgo_shim_icp_register(void);
 int zalgo_shim_openssl_register(void);
 int zalgo_shim_my_fletcher_register(void);
-#ifdef HAVE_ZALGO_DPUSM
+#ifdef DPUSM
 int zalgo_shim_dpusm_register(void);
 #endif
 
