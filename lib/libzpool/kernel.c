@@ -433,6 +433,9 @@ kernel_fini(void)
 
 	zstd_fini();
 
+#ifdef DPUSM
+	zalgo_shim_dpusm_fini();
+#endif
 	zalgo_fini();
 
 	icp_fini();

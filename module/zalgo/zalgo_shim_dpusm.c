@@ -19,6 +19,12 @@
 
 static const dpusm_uf_t *dpusm;
 static void *dpusm_provider;
+#ifdef _KERNEL
+/* DPUSM is an explicit kernel-module dependency in this build. */
+extern const dpusm_uf_t *dpusm_initialize_strong(void)
+    __asm__("dpusm_initialize");
+extern int dpusm_finalize_strong(void) __asm__("dpusm_finalize");
+#endif
 
 static int
 zalgo_dpusm_fletcher4(const uint8_t *data, size_t datalen,
@@ -68,7 +74,11 @@ zalgo_dpusm_fletcher4_once_abd(abd_t *abd, size_t datalen,
     zio_cksum_t *checksum, dpusm_checksum_byteorder_t byteorder)
 {
 	void *data = abd_borrow_buf_copy(abd, datalen);
-	int error = zalgo_dpusm_fletcher4(data, datalen, checksum, byteorder);
+	int error;
+
+	if (data == NULL)
+		return (ENOMEM);
+	error = zalgo_dpusm_fletcher4(data, datalen, checksum, byteorder);
 	abd_return_buf_copy(abd, data, datalen);
 	return (error);
 }
@@ -113,11 +123,15 @@ zalgo_shim_dpusm_bind(const char *provider_name)
 
 	if (provider_name == NULL || dpusm_provider != NULL)
 		return (EINVAL);
-	if (dpusm_initialize == NULL)
-		return (ENOTSUP);
-
-	if (dpusm == NULL)
+	if (dpusm == NULL) {
+#ifdef _KERNEL
+		dpusm = dpusm_initialize_strong();
+#else
+		if (dpusm_initialize == NULL)
+			return (ENOTSUP);
 		dpusm = dpusm_initialize();
+#endif
+	}
 	if (dpusm == NULL)
 		return (ENODEV);
 	if (dpusm->get == NULL || dpusm->capabilities == NULL ||
@@ -138,6 +152,9 @@ zalgo_shim_dpusm_bind(const char *provider_name)
 		    ZALGO_PROVIDER_ACCELERATED);
 		if (error != 0)
 			goto fail;
+		error = zalgo_checksum_select(ZG_CHECKSUM_FLETCHER4, "dpusm");
+		if (error != 0)
+			goto fail;
 	}
 	if ((caps->checksum & DPUSM_CHECKSUM_FLETCHER_4) != 0 &&
 	    (caps->checksum_byteorder & DPUSM_BYTEORDER_BYTESWAP) != 0) {
@@ -145,6 +162,9 @@ zalgo_shim_dpusm_bind(const char *provider_name)
 		    "dpusm", "DPUSM Fletcher4 byteswap",
 		    &zalgo_dpusm_fletcher4_swap_ops,
 		    ZALGO_PROVIDER_ACCELERATED);
+		if (error != 0)
+			goto fail;
+		error = zalgo_checksum_select(ZG_CHECKSUM_FLETCHER4_SWAP, "dpusm");
 		if (error != 0)
 			goto fail;
 	}
@@ -158,14 +178,28 @@ fail:
 }
 
 void
-zalgo_shim_dpusm_fini(void)
+zalgo_shim_dpusm_unbind(void)
 {
 	if (dpusm != NULL && dpusm_provider != NULL) {
 		(void) dpusm->put(dpusm_provider);
 		dpusm_provider = NULL;
 	}
-	if (dpusm != NULL && dpusm_finalize != NULL) {
-		(void) dpusm_finalize();
+}
+
+void
+zalgo_shim_dpusm_fini(void)
+{
+	zalgo_shim_dpusm_unbind();
+	if (dpusm != NULL) {
+#ifdef _KERNEL
+		(void) dpusm_finalize_strong();
+#else
+		if (dpusm_finalize != NULL)
+			(void) dpusm_finalize();
+#endif
 		dpusm = NULL;
 	}
 }
+
+EXPORT_SYMBOL(zalgo_shim_dpusm_bind);
+EXPORT_SYMBOL(zalgo_shim_dpusm_unbind);

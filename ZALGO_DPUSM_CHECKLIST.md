@@ -36,10 +36,10 @@ ZFS and DPUSM, but the design is not settled.
 
 - [x] Do not require a new, dedicated DPUSM provider implementation for each
       Zalgo/Z.I.A. algorithm.  For initial validation, use the
-      `zia_software_provider` once its implementation is available, or adapt
-      an existing hardware accelerator provider that already works with the
-      original Z.I.A. implementation.
-- [ ] Keep any provider adapter, capability mapping, and lifetime handling
+      `zia_software_provider` implementation, or adapt an existing hardware
+      accelerator provider that already works with the original Z.I.A.
+      implementation.
+- [x] Keep any provider adapter, capability mapping, and lifetime handling
       needed to expose those providers through Zalgo separate from writing a
       new DPUSM algorithm implementation.
 - [x] Treat asynchronous Z.I.A. as out of scope for this integration.  It is
@@ -127,30 +127,33 @@ ZFS and DPUSM, but the design is not settled.
 
 ## DPUSM shim investigation
 
-- [ ] Prototype `module/zalgo/zalgo_shim_dpusm.c` as an optional in-tree
+- [x] Prototype `module/zalgo/zalgo_shim_dpusm.c` as an optional in-tree
       shim, with no DPUSM dependency when DPUSM is not configured.
-- [ ] Identify the smallest DPUSM API surface the shim needs.
+- [x] Identify the smallest DPUSM API surface the shim needs.
 - [ ] Map Zalgo contexts and operation lifetimes to DPUSM sessions, queues,
       requests, completions, and buffers.
-- [ ] Determine whether DPUSM can consume ABD-backed data directly or needs
+- [x] Determine whether DPUSM can consume ABD-backed data directly or needs
       a linearization/copy path.
-- [ ] Define initialization and teardown ordering for ZFS, Zalgo, DPUSM, and
+- [x] Define initialization and teardown ordering for ZFS, Zalgo, DPUSM, and
       hardware resources.
 - [ ] Decide how the shim reports unsupported requests, queue exhaustion,
       device loss, timeouts, and hardware errors.
-- [ ] Ensure the shim can be compiled, linked, and loaded on systems without
+- [x] Ensure the shim can be compiled, linked, and loaded on systems without
       DPUSM.
 
 ## Error handling and fallback
 
 - [ ] Make error propagation end-to-end for operations whose existing ZFS
       interfaces currently return `void`, especially checksum operations.
-- [ ] Decide whether a failed hardware provider is retried by another Zalgo
+- [x] Decide whether a failed hardware provider is retried by another Zalgo
       provider, and define which failures are retryable.
-- [ ] Restart retries from the original input with a fresh context rather
+- [x] Restart retries from the original input with a fresh context rather
       than continuing a partially completed operation.
 - [ ] Add an explicit DPUSM-to-software fallback path for every accelerated
-      operation.  A DPUSM provider failure must retry the best available
+      operation.  The synchronous Fletcher4 first pass now retries the best
+      available software Zalgo provider, but each future accelerated operation
+      must receive the same treatment.
+      A DPUSM provider failure must retry the best available
       software Zalgo provider for the same algorithm before returning an
       error, where the surrounding ZFS operation permits retry.
 - [ ] Model the Z.I.A. `ZIA_FALLBACK` behavior for DPUSM failures without
@@ -159,7 +162,7 @@ ZFS and DPUSM, but the design is not settled.
       software implementation, while malformed compressed data,
       checksum mismatches, and authentication failures must remain data
       errors.
-- [ ] Ensure a DPUSM failure leaves a valid retry input and a clean output
+- [x] Ensure a DPUSM failure leaves a valid retry input and a clean output
       destination.  Hardware may partially consume or modify buffers, so a
       retry must restore or preserve the original data and reset output
       ownership/length state.

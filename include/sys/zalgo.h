@@ -228,6 +228,7 @@ int zalgo_shim_my_fletcher_register(void);
 #ifdef DPUSM
 int zalgo_shim_dpusm_register(void);
 int zalgo_shim_dpusm_bind(const char *provider_name);
+void zalgo_shim_dpusm_unbind(void);
 void zalgo_shim_dpusm_fini(void);
 #endif
 
