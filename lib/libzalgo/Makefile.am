@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: CDDL-1.0
 noinst_LTLIBRARIES += libzalgo.la libzalgo_shim_fletcher.la libzalgo_shim_icp.la
 CPPCHECKTARGETS    += libzalgo.la libzalgo_shim_fletcher.la libzalgo_shim_icp.la
 
