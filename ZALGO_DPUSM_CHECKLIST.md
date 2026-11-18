@@ -7,7 +7,7 @@ ZFS and DPUSM, but the design is not settled.
 
 ## Repository and baseline
 
-- [ ] Record the exact Zalgo and DPUSM commits used for each experiment.
+- [x] Record the exact Zalgo and DPUSM commits used for each experiment.
 - [ ] Build and run the existing Zalgo path without DPUSM as a baseline.
 - [ ] Build and run the existing DPUSM path independently for a
       behavior and performance comparison.
@@ -18,18 +18,18 @@ ZFS and DPUSM, but the design is not settled.
 
 ## Zalgo model and subtype design
 
-- [ ] Decide whether DPUSM should be a provider of an existing subtype or
+- [x] Decide whether DPUSM should be a provider of an existing subtype or
       whether it requires new hardware-acceleration subtypes.
-- [ ] Define the operation and context contracts for each proposed subtype.
-- [ ] Specify which operations are synchronous, asynchronous, or capable of
+- [x] Define the operation and context contracts for each proposed subtype.
+- [x] Specify which operations are synchronous, asynchronous, or capable of
       both modes.
-- [ ] Define how ABDs, linear buffers, scatter/gather data, alignment, and
+- [x] Define how ABDs, linear buffers, scatter/gather data, alignment, and
       size restrictions are represented.
-- [ ] Define capability reporting for hardware availability, supported
+- [x] Define capability reporting for hardware availability, supported
       algorithms, maximum request sizes, and concurrency limits.
-- [ ] Decide whether provider selection is global, per operation, per pool,
+- [x] Decide whether provider selection is global, per operation, per pool,
       per dataset, or per request.
-- [ ] Document how subtype selection and provider benchmarking interact with
+- [x] Document how subtype selection and provider benchmarking interact with
       DPUSM setup and device state.
 
 ### Algorithm implementation and test-provider scope
@@ -149,13 +149,13 @@ ZFS and DPUSM, but the design is not settled.
 - [x] Prototype `module/zalgo/zalgo_shim_dpusm.c` as an optional in-tree
       shim, with no DPUSM dependency when DPUSM is not configured.
 - [x] Identify the smallest DPUSM API surface the shim needs.
-- [ ] Map Zalgo contexts and operation lifetimes to DPUSM sessions, queues,
+- [x] Map Zalgo contexts and operation lifetimes to DPUSM sessions, queues,
       requests, completions, and buffers.
 - [x] Determine whether DPUSM can consume ABD-backed data directly or needs
       a linearization/copy path.
 - [x] Define initialization and teardown ordering for ZFS, Zalgo, DPUSM, and
       hardware resources.
-- [ ] Decide how the shim reports unsupported requests, queue exhaustion,
+- [x] Decide how the shim reports unsupported requests, queue exhaustion,
       device loss, timeouts, and hardware errors.
 - [x] Ensure the shim can be compiled, linked, and loaded on systems without
       DPUSM.
@@ -211,14 +211,14 @@ items only when that work is explicitly brought into this branch.
 
 ## Build, configuration, and portability
 
-- [ ] Add a configuration mechanism for detecting and selecting DPUSM.
-- [ ] Keep common Zalgo code portable across Linux, FreeBSD, and userspace
+- [x] Add a configuration mechanism for detecting and selecting DPUSM.
+- [x] Keep common Zalgo code portable across Linux, FreeBSD, and userspace
       builds where applicable.
-- [ ] Keep DPUSM-specific headers and kernel interfaces behind the appropriate
+- [x] Keep DPUSM-specific headers and kernel interfaces behind the appropriate
       platform/configuration boundaries.
-- [ ] Update Kbuild, configure checks, generated build inputs, and packaging
+- [x] Update Kbuild, configure checks, generated build inputs, and packaging
       only after the integration shape is understood.
-- [ ] Document required DPUSM versions, symbols, and ABI compatibility.
+- [x] Document required DPUSM versions, symbols, and ABI compatibility.
 
 ### Optional OpenSSL provider dependencies
 
