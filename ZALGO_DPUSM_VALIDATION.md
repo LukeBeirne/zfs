@@ -134,3 +134,20 @@ unload, and DPUSM exited cleanly. The same four modules were then inserted
 again, the no-pool ZFS state was checked, and they were unloaded a second time
 in reverse dependency order. Both cycles completed without kernel crash
 signatures. The external `my_fletcher_provider.ko` was not loaded.
+
+## No-DPUSM CPU baseline
+
+The Zalgo tree was configured without `--with-dpusm` and built successfully as
+two modules (`MODPOST 2 modules`): `spl.ko` and `zfs.ko`. The resulting
+`zfs.ko` depended only on `spl.ko`, confirming that the DPUSM shim and
+software-provider module were omitted.
+
+On that CPU-only build, a disposable striped pool using all five authorized
+NVMe devices completed 256 MiB fio write/read operations and a scrub. The
+pool remained `ONLINE` with zero read, write, and checksum errors and
+`errors: No known data errors`. The pool was destroyed and the CPU-only
+modules were unloaded cleanly.
+
+Afterward, the tree was restored to the DPUSM-enabled configuration and a
+fresh DPUSM-enabled kernel build was started; its final result is recorded
+separately after completion.

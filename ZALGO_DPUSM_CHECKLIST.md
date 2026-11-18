@@ -8,7 +8,9 @@ ZFS and DPUSM, but the design is not settled.
 ## Repository and baseline
 
 - [x] Record the exact Zalgo and DPUSM commits used for each experiment.
-- [ ] Build and run the existing Zalgo path without DPUSM as a baseline.
+- [x] Build and run the existing Zalgo path without DPUSM as a baseline. The
+      no-DPUSM build produced only `spl.ko` and `zfs.ko`; a CPU-only striped
+      pool completed fio write/read and scrub with no known data errors.
 - [ ] Build and run the existing DPUSM path independently for a
       behavior and performance comparison.
 - [x] Identify which existing accelerator-integration changes are required by
