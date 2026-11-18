@@ -3,6 +3,41 @@
 This note records the contract used by the current synchronous DPUSM
 experiment. It is intentionally narrower than a production accelerator ABI.
 
+## Architectural decision for the synchronous experiment
+
+DPUSM is implemented as an accelerated provider of existing Zalgo algorithm
+subtypes, with the DPUSM service/device interface kept behind the provider
+shim. It is not a new checksum subtype and it is not a separate ZFS-facing
+service. Pool-local runtime context selects the provider, while dataset and
+block metadata continue to select the algorithm. The software Zalgo provider
+and normal ZFS implementation remain independent fallback layers.
+
+This model is chosen because it preserves the on-disk algorithm identity,
+allows different pools to select different providers, and keeps DPUSM
+capabilities, buffer copying, provider handles, failure handling, and teardown
+out of common ZFS algorithm code. It also provides a direct software fallback
+for the first synchronous operation without changing the existing ZFS
+checksum format or requiring every algorithm to gain a hardware-specific
+subtype.
+
+Rejected alternatives for this experiment:
+
+- **A new DPUSM hardware subtype:** rejected because acceleration is an
+  implementation choice, not a distinct on-disk algorithm. A new subtype
+  would duplicate algorithm selection and complicate software fallback.
+- **A separate ZFS-facing DPUSM service:** rejected because it would bypass
+  Zalgo's provider selection, holds, capability metadata, and software
+  fallback model, while requiring a second dispatch/lifetime interface in
+  ZFS.
+- **A single global DPUSM provider binding:** rejected because provider
+  selection and gates are runtime pool policy; a global binding would make
+  concurrent pools interfere with one another.
+
+This is a synchronous integration decision, not a final production
+architecture. Compression, RAIDZ, asynchronous requests, detailed error
+propagation, and device-removal behavior require their own operation
+contracts before they can be included in the decision.
+
 ## Revisions
 
 The experiment was recorded against:

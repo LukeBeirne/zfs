@@ -281,8 +281,10 @@ items only when that work is explicitly brought into this branch.
 
 ## Design decision
 
-- [ ] Decide whether DPUSM is best implemented as a Zalgo provider, a new
+- [x] Decide whether DPUSM is best implemented as a Zalgo provider, a new
       Zalgo hardware subtype, a separate service behind a Zalgo provider, or
-      a combination of these approaches.
-- [ ] Record the rejected alternatives and the reasons for choosing the
+      a combination of these approaches. For the synchronous experiment,
+      DPUSM is an accelerated provider of existing Zalgo subtypes, with the
+      DPUSM service behind the provider shim.
+- [x] Record the rejected alternatives and the reasons for choosing the
       eventual integration model before preparing a production pull request.
