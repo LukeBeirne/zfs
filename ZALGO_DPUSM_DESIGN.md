@@ -38,6 +38,33 @@ architecture. Compression, RAIDZ, asynchronous requests, detailed error
 propagation, and device-removal behavior require their own operation
 contracts before they can be included in the decision.
 
+## ZFS boundary versus implementation detail
+
+The ZFS-facing changes required by this experiment are intentionally small:
+
+- carry `spa_t` into the Fletcher4 checksum dispatch so operation-time policy
+  can be pool-local;
+- store runtime-only provider and operation-gate state in the pool context;
+- validate creation-time settings and release the context during export,
+  import reset, and destruction; and
+- preserve the existing checksum subtype, on-disk format, and normal ZFS
+  fallback entry points.
+
+The following remain behind Zalgo/DPUSM and are not ZFS algorithm changes:
+
+- provider registration, accelerated/software classification, selection,
+  holds, and fallback-node management;
+- DPUSM capability checks, provider handles, temporary buffers, ABD
+  linearization, synchronous result mapping, failure quarantine, and context
+  draining; and
+- optional DPUSM configuration, Kbuild linkage, and software-provider test
+  module handling.
+
+This boundary means a future compression, RAIDZ, or asynchronous integration
+must first define its caller-visible result and lifetime contract, then add
+only the minimum ZFS plumbing needed to carry pool policy and operation
+context. It should not copy DPUSM provider logic into common ZFS code.
+
 ## Revisions
 
 The experiment was recorded against:

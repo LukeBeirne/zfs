@@ -11,10 +11,13 @@ ZFS and DPUSM, but the design is not settled.
 - [ ] Build and run the existing Zalgo path without DPUSM as a baseline.
 - [ ] Build and run the existing DPUSM path independently for a
       behavior and performance comparison.
-- [ ] Identify which existing accelerator-integration changes are required by
+- [x] Identify which existing accelerator-integration changes are required by
       ZFS, and which are implementation details that can move behind Zalgo.
-- [ ] Keep the first integration experiments behind build/configuration
-      checks so ZFS still builds when DPUSM is unavailable.
+      The current boundary is documented in `ZALGO_DPUSM_DESIGN.md`.
+- [x] Keep the first integration experiments behind build/configuration
+      checks so ZFS still builds when DPUSM is unavailable. The DPUSM-enabled
+      and no-DPUSM configure paths are separate; the no-DPUSM compile is being
+      validated independently from runtime testing.
 
 ## Zalgo model and subtype design
 
