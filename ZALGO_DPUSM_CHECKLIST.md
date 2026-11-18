@@ -225,18 +225,20 @@ items only when that work is explicitly brought into this branch.
 
 ### Optional OpenSSL provider dependencies
 
-- [ ] Resolve the current CI linker failure in
+- [x] Resolve the current CI linker failure in
       `module/zalgo/zalgo_shim_openssl.c`: the shim calls
       `EVP_CIPHER_CTX_dup()`, but some CI environments expose the declaration
       through their headers while linking an older `libcrypto` that does not
-      provide the symbol.
-- [ ] Prefer replacing each `EVP_CIPHER_CTX_dup()` call with a compatibility
+      provide the symbol. The shim now uses an internal compatibility helper.
+- [x] Prefer replacing each `EVP_CIPHER_CTX_dup()` call with a compatibility
       helper that allocates a destination using `EVP_CIPHER_CTX_new()`, copies
       the source using `EVP_CIPHER_CTX_copy()`, and frees the destination if
       the copy fails. This avoids requiring the newer `EVP_CIPHER_CTX_dup()`
       API while preserving the prepared-context-per-operation design.
-- [ ] Verify the `EVP_CIPHER_CTX_copy()` approach with the fetched AES-GCM and
-      AES-CCM cipher contexts used by the shim.
+- [x] Verify the `EVP_CIPHER_CTX_copy()` approach with the fetched AES-GCM and
+      AES-CCM cipher contexts used by the shim. The affected shim object
+      compiles successfully; runtime cipher verification remains a separate
+      privileged/runtime validation concern.
 - [ ] Add configure-time compile/link capability checks for the complete
       OpenSSL API used by the Zalgo shim rather than checking only the
       existing basic `libcrypto` functionality.

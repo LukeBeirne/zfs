@@ -145,6 +145,21 @@ typedef struct {
 	EVP_CIPHER_CTX *s_decrypt;
 } zg_ossl_aes_session_t;
 
+/* EVP_CIPHER_CTX_dup() is not available in older libcrypto versions. */
+static EVP_CIPHER_CTX *
+zg_ossl_cipher_ctx_dup(const EVP_CIPHER_CTX *src)
+{
+	EVP_CIPHER_CTX *dst = EVP_CIPHER_CTX_new();
+
+	if (dst == NULL || EVP_CIPHER_CTX_copy(dst, src) != 1) {
+		if (dst != NULL)
+			EVP_CIPHER_CTX_free(dst);
+		return (NULL);
+	}
+
+	return (dst);
+}
+
 static int
 zg_ossl_aes_open(void **ctx, const uint8_t *key, EVP_CIPHER *cipher)
 {
@@ -239,7 +254,7 @@ zg_ossl_aes_ccm_encrypt(void **ctx,
 {
 	zg_ossl_aes_session_t *sess = *ctx;
 
-	EVP_CIPHER_CTX *ectx = EVP_CIPHER_CTX_dup(sess->s_encrypt);
+	EVP_CIPHER_CTX *ectx = zg_ossl_cipher_ctx_dup(sess->s_encrypt);
 	if (ectx == NULL)
 		goto error;
 
@@ -297,7 +312,7 @@ zg_ossl_aes_ccm_decrypt(void **ctx,
 {
 	zg_ossl_aes_session_t *sess = *ctx;
 
-	EVP_CIPHER_CTX *dctx = EVP_CIPHER_CTX_dup(sess->s_decrypt);
+	EVP_CIPHER_CTX *dctx = zg_ossl_cipher_ctx_dup(sess->s_decrypt);
 	if (dctx == NULL)
 		goto error;
 
@@ -373,7 +388,7 @@ zg_ossl_aes_gcm_encrypt(void **ctx,
 {
 	zg_ossl_aes_session_t *sess = *ctx;
 
-	EVP_CIPHER_CTX *ectx = EVP_CIPHER_CTX_dup(sess->s_encrypt);
+	EVP_CIPHER_CTX *ectx = zg_ossl_cipher_ctx_dup(sess->s_encrypt);
 	if (ectx == NULL)
 		goto error;
 
@@ -416,7 +431,7 @@ zg_ossl_aes_gcm_decrypt(void **ctx,
 {
 	zg_ossl_aes_session_t *sess = *ctx;
 
-	EVP_CIPHER_CTX *dctx = EVP_CIPHER_CTX_dup(sess->s_decrypt);
+	EVP_CIPHER_CTX *dctx = zg_ossl_cipher_ctx_dup(sess->s_decrypt);
 	if (dctx == NULL)
 		goto error;
 
