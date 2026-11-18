@@ -272,8 +272,8 @@ items only when that work is explicitly brought into this branch.
       changing provider availability.
 - [x] Integrate provider/module references with DPUSM device and queue
       lifetimes.
-- [ ] Verify teardown after pool destruction, export/import, module reload,
-      device removal, and DPUSM shutdown.
+- [x] Verify teardown after pool destruction, export/import, module reload,
+      and DPUSM shutdown. Device-removal behavior remains open.
 
 ## Validation and measurement
 

@@ -119,3 +119,18 @@ The existing userspace `make unit` suite also completed successfully,
 including the Zalgo registration/hold/selection tests and Fletcher checksum
 tests. It does not yet contain DPUSM-specific context, quarantine, or teardown
 unit coverage.
+
+## Module teardown and reload validation
+
+After all disposable pools and mounts were removed, the authorized modules
+were unloaded in dependency-safe order:
+
+```text
+zia_software_provider -> zfs -> spl -> dpusm
+```
+
+The provider unregister completed with zero users, ZFS reported a clean module
+unload, and DPUSM exited cleanly. The same four modules were then inserted
+again, the no-pool ZFS state was checked, and they were unloaded a second time
+in reverse dependency order. Both cycles completed without kernel crash
+signatures. The external `my_fletcher_provider.ko` was not loaded.
