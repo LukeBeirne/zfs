@@ -325,6 +325,8 @@ typedef enum {
 	ZPOOL_PROP_SELOG_FRAGMENTATION,
 	/* Runtime-only DPUSM selection; intentionally not persisted. */
 	ZPOOL_PROP_DPUSM_PROVIDER,
+	/* Runtime-only DPUSM checksum gate; intentionally not persisted. */
+	ZPOOL_PROP_DPUSM_CHECKSUM,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 

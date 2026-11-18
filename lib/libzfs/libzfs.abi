@@ -3188,7 +3188,9 @@
       <enumerator name='ZPOOL_PROP_SELOG_USED' value='96'/>
       <enumerator name='ZPOOL_PROP_SELOG_EXPANDSZ' value='97'/>
       <enumerator name='ZPOOL_PROP_SELOG_FRAGMENTATION' value='98'/>
-      <enumerator name='ZPOOL_NUM_PROPS' value='99'/>
+      <enumerator name='ZPOOL_PROP_DPUSM_PROVIDER' value='99'/>
+      <enumerator name='ZPOOL_PROP_DPUSM_CHECKSUM' value='100'/>
+      <enumerator name='ZPOOL_NUM_PROPS' value='101'/>
     </enum-decl>
     <typedef-decl name='zpool_prop_t' type-id='af1ba157' id='5d0c23fb'/>
     <typedef-decl name='regoff_t' type-id='95e97e5e' id='54a2a2a8'/>

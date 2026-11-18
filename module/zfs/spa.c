@@ -517,11 +517,14 @@ spa_prop_get_config(spa_t *spa, nvlist_t *nv)
 		spa_prop_add_list(nv, ZPOOL_PROP_READONLY, NULL,
 		    (spa_mode(spa) == SPA_MODE_READ), src);
 
-		const char *dpusm_provider =
-		    zalgo_shim_dpusm_provider_name();
-		if (dpusm_provider != NULL)
+		char *dpusm_provider = kmem_alloc(ZAP_MAXVALUELEN, KM_SLEEP);
+		if (zalgo_shim_dpusm_provider_name(spa, dpusm_provider,
+		    ZAP_MAXVALUELEN) == 0)
 			spa_prop_add_list(nv, ZPOOL_PROP_DPUSM_PROVIDER,
 			    dpusm_provider, 0, ZPROP_SRC_LOCAL);
+		kmem_free(dpusm_provider, ZAP_MAXVALUELEN);
+		spa_prop_add_list(nv, ZPOOL_PROP_DPUSM_CHECKSUM, NULL,
+		    spa->spa_dpusm_checksum, ZPROP_SRC_LOCAL);
 
 		spa_prop_add_list(nv, ZPOOL_PROP_DEDUPRATIO, NULL,
 		    ddt_get_pool_dedup_ratio(spa), src);
@@ -939,7 +942,18 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				break;
 			error = zalgo_shim_dpusm_provider_validate(strval);
 			if (error == 0)
-				error = zalgo_shim_dpusm_provider_set(strval);
+			error = zalgo_shim_dpusm_provider_set(spa, strval);
+			break;
+
+		case ZPOOL_PROP_DPUSM_CHECKSUM:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && intval > 1)
+				error = SET_ERROR(EINVAL);
+			if (!error) {
+				spa->spa_dpusm_checksum = intval != 0;
+				error = zalgo_shim_dpusm_checksum_set(spa,
+				    intval != 0);
+			}
 			break;
 
 		default:
@@ -952,6 +966,9 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 
 	(void) nvlist_remove_all(props,
 	    zpool_prop_to_name(ZPOOL_PROP_DEDUPDITTO));
+	if (!error)
+		error = zalgo_shim_dpusm_checksum_set(spa,
+		    spa->spa_dpusm_checksum);
 
 	if (!error && reset_bootfs) {
 		error = nvlist_remove(props,
@@ -2444,7 +2461,7 @@ spa_unload(spa_t *spa)
 	 * and must be reacquired after a later import.
 	 */
 #ifdef DPUSM
-	zalgo_shim_dpusm_unbind();
+	zalgo_shim_dpusm_context_destroy(spa);
 #endif
 
 	ddt_unload(spa);
@@ -7599,6 +7616,8 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_autoexpand = zpool_prop_default_numeric(ZPOOL_PROP_AUTOEXPAND);
 	spa->spa_multihost = zpool_prop_default_numeric(ZPOOL_PROP_MULTIHOST);
 	spa->spa_autotrim = zpool_prop_default_numeric(ZPOOL_PROP_AUTOTRIM);
+	spa->spa_dpusm_checksum = zpool_prop_default_numeric(
+	    ZPOOL_PROP_DPUSM_CHECKSUM) != 0;
 	spa->spa_dedup_table_quota =
 	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUP_TABLE_QUOTA);
 
@@ -10827,6 +10846,14 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			/* Runtime-only, matching Original Z.I.A.'s provider property. */
 			spa_history_log_internal(spa, "set", tx,
 			    "%s=%s", elemname, strval);
+			break;
+		case ZPOOL_PROP_DPUSM_CHECKSUM:
+			spa->spa_dpusm_checksum = fnvpair_value_uint64(elem) != 0;
+			(void) zalgo_shim_dpusm_checksum_set(spa,
+			    spa->spa_dpusm_checksum);
+			spa_history_log_internal(spa, "set", tx,
+			    "%s=%lld", elemname,
+			    (longlong_t) spa->spa_dpusm_checksum);
 			break;
 		case ZPOOL_PROP_COMMENT:
 			strval = fnvpair_value_string(elem);

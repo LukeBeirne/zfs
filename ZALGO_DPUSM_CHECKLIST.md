@@ -89,7 +89,7 @@ ZFS and DPUSM, but the design is not settled.
 - [x] Do not treat the absence of a software Zalgo provider as an integration
       failure.  It is a required final fallback to the established ZFS
       implementation, not a reason to change the selected algorithm.
-- [ ] Implement pool-aware operation-time dispatch so the pool's DPUSM gate
+- [x] Implement pool-aware operation-time dispatch so the pool's DPUSM gate
       and configured provider are consulted without changing the
       dataset/block-selected subtype.  This is the implementation issue
       behind the pool-context dispatch design, not a change to the algorithm
@@ -108,10 +108,10 @@ ZFS and DPUSM, but the design is not settled.
 - [x] Release the runtime DPUSM provider during pool destruction after vdev
       and DSL teardown, matching Original Z.I.A.'s destroy-time provider
       cleanup.
-- [ ] Replace the prototype's single global DPUSM binding with pool-aware
+- [x] Replace the prototype's single global DPUSM binding with pool-aware
       provider contexts before allowing different pools to select different
       DPUSM providers concurrently.
-- [ ] Hold the selected Zalgo node and DPUSM provider handle through the
+- [x] Hold the selected Zalgo node and DPUSM provider handle through the
       complete operation and any software retry, including invalidation and
       provider-replacement races.
 - [ ] Define a compression operation result that distinguishes provider
@@ -135,10 +135,12 @@ ZFS and DPUSM, but the design is not settled.
       pool DPUSM gate and provider capability, then the normal Zalgo/software
       provider.  A missing or invalid DPUSM provider must not prevent normal
       ZFS operation.
-- [ ] Connect pool policy to operation-time Zalgo holds so separate pools can
+- [x] Connect pool policy to operation-time Zalgo holds so separate pools can
       use different DPUSM policies without changing Zalgo's global default.
-- [ ] Add runtime provider binding, capability checks, and safe replacement
+- [x] Add runtime provider binding, capability checks, and safe replacement
       when `dpusm_provider` changes.
+- [x] Add the runtime-only `dpusm_checksum` gate and ensure its final value is
+      applied after property validation regardless of nvlist property order.
 - [ ] Add user documentation and tests for dataset algorithm settings
       interacting with pool-level DPUSM settings.
 

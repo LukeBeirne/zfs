@@ -162,12 +162,17 @@ typedef struct {
 	    zio_cksum_t *checksum);
 	int (*zgc_op_once_abd)(abd_t *abd, size_t datalen,
 	    zio_cksum_t *checksum);
+	int (*zgc_op_once_spa)(spa_t *spa, abd_t *abd, size_t datalen,
+	    zio_cksum_t *checksum);
 	/* XXX abd etc */
 } zalgo_checksum_ops_t;
 
 ZALGO_DECLARE_API(checksum)
 
 int zalgo_checksum_once_fallback(
+    zalgo_checksum_subtype_t subtype, abd_t *abd, size_t datalen,
+    zio_cksum_t *checksum);
+int zalgo_checksum_once_fallback_spa(spa_t *spa,
     zalgo_checksum_subtype_t subtype, abd_t *abd, size_t datalen,
     zio_cksum_t *checksum);
 
@@ -183,6 +188,8 @@ int zalgo_checksum_once_fallback(
 	(hold)->zh_ops->zgc_op_once(__VA_ARGS__)
 #define	zalgo_checksum_once_abd(hold, ...)	\
 	(hold)->zh_ops->zgc_op_once_abd(__VA_ARGS__)
+#define	zalgo_checksum_once_spa(hold, ...)	\
+	(hold)->zh_ops->zgc_op_once_spa(__VA_ARGS__)
 
 /* ========== */
 
@@ -233,12 +240,11 @@ int zalgo_shim_openssl_register(void);
 int zalgo_shim_my_fletcher_register(void);
 #ifdef DPUSM
 int zalgo_shim_dpusm_register(void);
-int zalgo_shim_dpusm_bind(const char *provider_name);
-int zalgo_shim_dpusm_bind_owner(const char *provider_name, void *owner);
 int zalgo_shim_dpusm_provider_validate(const char *provider_name);
-int zalgo_shim_dpusm_provider_set(const char *provider_name);
-const char *zalgo_shim_dpusm_provider_name(void);
-void zalgo_shim_dpusm_unbind(void);
+int zalgo_shim_dpusm_provider_set(spa_t *spa, const char *provider_name);
+int zalgo_shim_dpusm_checksum_set(spa_t *spa, boolean_t enabled);
+int zalgo_shim_dpusm_provider_name(spa_t *spa, char *name, size_t size);
+void zalgo_shim_dpusm_context_destroy(spa_t *spa);
 void zalgo_shim_dpusm_fini(void);
 #else
 static inline int
@@ -251,15 +257,33 @@ zalgo_shim_dpusm_provider_validate(const char *provider_name)
 }
 
 static inline int
-zalgo_shim_dpusm_provider_set(const char *provider_name)
+zalgo_shim_dpusm_provider_set(spa_t *spa, const char *provider_name)
 {
+	(void) spa;
 	return (zalgo_shim_dpusm_provider_validate(provider_name));
 }
 
-static inline const char *
-zalgo_shim_dpusm_provider_name(void)
+static inline int
+zalgo_shim_dpusm_checksum_set(spa_t *spa, boolean_t enabled)
 {
-	return (NULL);
+	(void) spa;
+	(void) enabled;
+	return (0);
+}
+
+static inline int
+zalgo_shim_dpusm_provider_name(spa_t *spa, char *name, size_t size)
+{
+	(void) spa;
+	if (name != NULL && size != 0)
+		name[0] = '\0';
+	return (ENOENT);
+}
+
+static inline void
+zalgo_shim_dpusm_context_destroy(spa_t *spa)
+{
+	(void) spa;
 }
 #endif
 

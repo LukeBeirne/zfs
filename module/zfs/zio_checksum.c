@@ -395,8 +395,14 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		    eck_offset + offsetof(zio_eck_t, zec_cksum),
 		    sizeof (zio_cksum_t));
 
-		ci->ci_func[0](abd, size, spa->spa_cksum_tmpls[checksum],
-		    &cksum);
+		if (checksum == ZIO_CHECKSUM_FLETCHER_4 &&
+		    zalgo_checksum_once_fallback_spa(spa, ZG_CHECKSUM_FLETCHER4,
+		    abd, size, &cksum) != 0)
+			ci->ci_func[0](abd, size, spa->spa_cksum_tmpls[checksum],
+			    &cksum);
+		else if (checksum != ZIO_CHECKSUM_FLETCHER_4)
+			ci->ci_func[0](abd, size, spa->spa_cksum_tmpls[checksum],
+			    &cksum);
 		if (bp != NULL && BP_USES_CRYPT(bp) &&
 		    BP_GET_TYPE(bp) != DMU_OT_OBJSET)
 			zio_checksum_handle_crypt(&cksum, &saved, insecure);
@@ -406,8 +412,14 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		    sizeof (zio_cksum_t));
 	} else {
 		saved = bp->blk_cksum;
-		ci->ci_func[0](abd, size, spa->spa_cksum_tmpls[checksum],
-		    &cksum);
+		if (checksum == ZIO_CHECKSUM_FLETCHER_4 &&
+		    zalgo_checksum_once_fallback_spa(spa, ZG_CHECKSUM_FLETCHER4,
+		    abd, size, &cksum) != 0)
+			ci->ci_func[0](abd, size, spa->spa_cksum_tmpls[checksum],
+			    &cksum);
+		else if (checksum != ZIO_CHECKSUM_FLETCHER_4)
+			ci->ci_func[0](abd, size, spa->spa_cksum_tmpls[checksum],
+			    &cksum);
 		if (BP_USES_CRYPT(bp) && BP_GET_TYPE(bp) != DMU_OT_OBJSET)
 			zio_checksum_handle_crypt(&cksum, &saved, insecure);
 		bp->blk_cksum = cksum;
@@ -484,8 +496,15 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 		abd_copy_from_buf_off(abd, &verifier, eck_offset,
 		    sizeof (zio_cksum_t));
 
-		ci->ci_func[byteswap](abd, size,
-		    spa->spa_cksum_tmpls[checksum], &actual_cksum);
+		if (checksum == ZIO_CHECKSUM_FLETCHER_4 &&
+		    zalgo_checksum_once_fallback_spa(spa,
+		    byteswap ? ZG_CHECKSUM_FLETCHER4_SWAP : ZG_CHECKSUM_FLETCHER4,
+		    abd, size, &actual_cksum) != 0)
+			ci->ci_func[byteswap](abd, size,
+			    spa->spa_cksum_tmpls[checksum], &actual_cksum);
+		else if (checksum != ZIO_CHECKSUM_FLETCHER_4)
+			ci->ci_func[byteswap](abd, size,
+			    spa->spa_cksum_tmpls[checksum], &actual_cksum);
 
 		abd_copy_from_buf_off(abd, &expected_cksum, eck_offset,
 		    sizeof (zio_cksum_t));
@@ -497,8 +516,15 @@ zio_checksum_error_impl(spa_t *spa, const blkptr_t *bp,
 	} else {
 		byteswap = BP_SHOULD_BYTESWAP(bp);
 		expected_cksum = bp->blk_cksum;
-		ci->ci_func[byteswap](abd, size,
-		    spa->spa_cksum_tmpls[checksum], &actual_cksum);
+		if (checksum == ZIO_CHECKSUM_FLETCHER_4 &&
+		    zalgo_checksum_once_fallback_spa(spa,
+		    byteswap ? ZG_CHECKSUM_FLETCHER4_SWAP : ZG_CHECKSUM_FLETCHER4,
+		    abd, size, &actual_cksum) != 0)
+			ci->ci_func[byteswap](abd, size,
+			    spa->spa_cksum_tmpls[checksum], &actual_cksum);
+		else if (checksum != ZIO_CHECKSUM_FLETCHER_4)
+			ci->ci_func[byteswap](abd, size,
+			    spa->spa_cksum_tmpls[checksum], &actual_cksum);
 	}
 
 	/*

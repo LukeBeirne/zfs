@@ -516,6 +516,13 @@ zalgo_##ty##_hold_fallback(zalgo_##ty##_subtype_t subtype)	\
 	return (zalgo_hold_fallback(ZG_##en, subtype));					\
 }									\
 									\
+zalgo_##ty##_hold_t *								\
+zalgo_##ty##_hold_spa(spa_t *spa, zalgo_##ty##_subtype_t subtype)	\
+{									\
+	(void) spa;								\
+	return (zalgo_hold(ZG_##en, subtype));					\
+}								\
+\
 void									\
 zalgo_##ty##_rele(zalgo_##ty##_hold_t *hold)				\
 {									\
@@ -544,6 +551,33 @@ zalgo_checksum_once_fallback(zalgo_checksum_subtype_t subtype,
 	if (hold == NULL)
 		goto fallback;
 	error = zalgo_checksum_once_abd(hold, abd, datalen, checksum);
+	zalgo_checksum_rele(hold);
+	if (error == 0)
+		return (0);
+
+fallback:
+	hold = zalgo_checksum_hold_fallback(subtype);
+	if (hold == NULL)
+		return (ZALGO_FALLBACK);
+	error = zalgo_checksum_once_abd(hold, abd, datalen, checksum);
+	zalgo_checksum_rele(hold);
+	return (error == 0 ? 0 : ZALGO_FALLBACK);
+}
+
+int
+zalgo_checksum_once_fallback_spa(spa_t *spa,
+    zalgo_checksum_subtype_t subtype, abd_t *abd, size_t datalen,
+    zio_cksum_t *checksum)
+{
+	zalgo_checksum_hold_t *hold = zalgo_checksum_hold_spa(spa, subtype);
+	int error;
+
+	if (hold == NULL)
+		goto fallback;
+	if (hold->zh_ops->zgc_op_once_spa != NULL)
+		error = zalgo_checksum_once_spa(hold, spa, abd, datalen, checksum);
+	else
+		error = zalgo_checksum_once_abd(hold, abd, datalen, checksum);
 	zalgo_checksum_rele(hold);
 	if (error == 0)
 		return (0);
