@@ -92,3 +92,30 @@ striped and RAIDZ2 I/O, scrub, degraded read, and resilver behavior. It does
 not yet validate induced DPUSM operation failures/quarantine, corruption
 injection, encryption, concurrent multi-pool isolation, device removal, or
 module unload ordering.
+
+## Additional hpe2 failure and isolation validation
+
+An authorized validation run also completed with the software provider's
+`checksum_down_max=-1` failure-injection parameter, which makes the next
+provider checksum operation return an invalidated-provider result. The run
+verified:
+
+- a forced DPUSM checksum failure did not interrupt a 256 MiB fio write;
+- the affected pool remained `ONLINE` with no known data errors, showing the
+  software/ZFS fallback path remained usable;
+- resetting the parameter to `0`, explicitly re-enabling `dpusm_checksum`,
+  and writing another 256 MiB file succeeded;
+- two simultaneous pools retained independent policies, with one using
+  `zia_software_provider` and the other using provider `-`;
+- both isolated pools accepted writes and scrubbed with zero errors; and
+- all temporary pools were destroyed and the failure-injection parameter was
+  restored to `0`.
+
+The internal quarantine state is not exposed through `zpool get`, and the
+current shim emits no dedicated quarantine log, so this validates fallback and
+recovery behavior but not direct observability of the three-failure threshold.
+
+The existing userspace `make unit` suite also completed successfully,
+including the Zalgo registration/hold/selection tests and Fletcher checksum
+tests. It does not yet contain DPUSM-specific context, quarantine, or teardown
+unit coverage.

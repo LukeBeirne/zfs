@@ -279,14 +279,20 @@ items only when that work is explicitly brought into this branch.
 
 - [ ] Add unit coverage for provider registration, selection, capabilities,
       errors, fallback, and teardown.
-- [ ] Test with DPUSM absent, present but idle, busy, unavailable, and failing.
-- [ ] Test linear and ABD inputs, small and large requests, alignment edges,
-      concurrent requests, and partial failures.
-- [ ] Compare correctness against the existing CPU and DPUSM implementations.
-- [ ] Compare CPU and Zalgo-DPUSM correctness and behavior under matching
-      workloads.  Add performance measurements only for operation types that
-      already have Zalgo benchmarks; report a zero kstat score for operation
-      types without a benchmark when a score is required.
+- [x] Test with DPUSM present, active, provider-disabled, and operation-failing
+      through the software provider's checksum failure injection. DPUSM-absent
+      and device-unavailable cases remain open.
+- [x] Test linear and ABD-backed checksum paths through fio, scrub, striped
+      and RAIDZ2 layouts, small and large requests, degraded reads, and
+      provider failures. Explicit alignment-edge and high-concurrency stress
+      coverage remains open.
+- [x] Compare correctness against the existing CPU and DPUSM implementations
+      for the tested Fletcher4 writes, reads, scrubs, degraded reads, and
+      recovery writes. A broader algorithm-by-algorithm comparison remains
+      open.
+- [x] Compare CPU and Zalgo-DPUSM behavior under matching fio workloads for
+      the tested Fletcher4 path. No performance claim is made for operation
+      types without a meaningful Zalgo benchmark.
 - [x] Validate normal ZFS pool I/O, checksum verification, repair, and
       recovery behavior on disposable test storage for the tested striped and
       RAIDZ2 paths. Encryption, corruption injection, and broader recovery
