@@ -174,19 +174,20 @@ ZFS and DPUSM, but the design is not settled.
       provider, and define which failures are retryable.
 - [x] Restart retries from the original input with a fresh context rather
       than continuing a partially completed operation.
-- [ ] Add an explicit DPUSM-to-software fallback path for every accelerated
-      operation.  The synchronous Fletcher4 first pass now retries the best
-      available software Zalgo provider, but each future accelerated operation
-      must receive the same treatment.
-      A DPUSM provider failure must retry the best available
-      software Zalgo provider for the same algorithm before returning an
-      error, where the surrounding ZFS operation permits retry.
-- [ ] Model the Z.I.A. `ZIA_FALLBACK` behavior for DPUSM failures without
+- [x] Add an explicit DPUSM-to-software fallback path for every accelerated
+      operation currently implemented. The synchronous Fletcher4 path retries
+      the best available software Zalgo provider, then normal ZFS. Future
+      accelerated operations must receive the same treatment.
+      A DPUSM provider failure must retry the best available software Zalgo
+      provider for the same algorithm before returning an error, where the
+      surrounding ZFS operation permits retry.
+- [x] Model the Z.I.A. `ZIA_FALLBACK` behavior for DPUSM failures without
       conflating it with an algorithm failure: unsupported, unavailable,
       invalidated, timed-out, or hardware-error results should select the
       software implementation, while malformed compressed data,
       checksum mismatches, and authentication failures must remain data
-      errors.
+      errors. This policy is implemented for the synchronous Fletcher4 path;
+      compression, RAIDZ, and other operations remain future work.
 - [x] Ensure a DPUSM failure leaves a valid retry input and a clean output
       destination.  Hardware may partially consume or modify buffers, so a
       retry must restore or preserve the original data and reset output

@@ -181,6 +181,13 @@ gate. The next explicit provider selection or checksum-gate update can restore
 use after the caller has decided the provider is healthy. Checksum mismatches
 remain ZFS data-integrity results and are not classified as provider failures.
 
+For the currently implemented Fletcher4 operation, this is the concrete
+fallback sequence: the pool-aware DPUSM callback returns an acceleration
+failure without consuming the source ABD, the Zalgo helper retries the
+software provider for the same subtype, and the ZFS caller retains its normal
+Fletcher4 implementation as the final fallback. The policy is not yet a
+generic contract for compression, RAIDZ, or asynchronous operations.
+
 ## Replacement and teardown
 
 Provider replacement validates and acquires the new provider before detaching
