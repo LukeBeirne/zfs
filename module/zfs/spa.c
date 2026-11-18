@@ -83,6 +83,7 @@
 #include <sys/zfeature.h>
 #include <sys/dsl_destroy.h>
 #include <sys/zvol.h>
+#include <sys/zalgo.h>
 
 #ifdef	_KERNEL
 #include <sys/fm/protocol.h>
@@ -516,6 +517,12 @@ spa_prop_get_config(spa_t *spa, nvlist_t *nv)
 		spa_prop_add_list(nv, ZPOOL_PROP_READONLY, NULL,
 		    (spa_mode(spa) == SPA_MODE_READ), src);
 
+		const char *dpusm_provider =
+		    zalgo_shim_dpusm_provider_name();
+		if (dpusm_provider != NULL)
+			spa_prop_add_list(nv, ZPOOL_PROP_DPUSM_PROVIDER,
+			    dpusm_provider, 0, ZPROP_SRC_LOCAL);
+
 		spa_prop_add_list(nv, ZPOOL_PROP_DEDUPRATIO, NULL,
 		    ddt_get_pool_dedup_ratio(spa), src);
 		spa_prop_add_list(nv, ZPOOL_PROP_DEDUPUSED, NULL,
@@ -925,6 +932,14 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			}
 			if (strlen(strval) > ZPROP_MAX_COMMENT)
 				error = SET_ERROR(E2BIG);
+			break;
+
+		case ZPOOL_PROP_DPUSM_PROVIDER:
+			if ((error = nvpair_value_string(elem, &strval)) != 0)
+				break;
+			error = zalgo_shim_dpusm_provider_validate(strval);
+			if (error == 0)
+				error = zalgo_shim_dpusm_provider_set(strval);
 			break;
 
 		default:
@@ -2420,6 +2435,17 @@ spa_unload(spa_t *spa)
 		spa->spa_dsl_pool = NULL;
 		spa->spa_meta_objset = NULL;
 	}
+
+	/*
+	 * Release the runtime-only DPUSM provider after vdevs and the DSL pool
+	 * have been closed.  Those paths may still have held provider-backed
+	 * buffers, so releasing it earlier would race their teardown.  Like the
+	 * original Z.I.A. provider, this binding is deliberately not persistent
+	 * and must be reacquired after a later import.
+	 */
+#ifdef DPUSM
+	zalgo_shim_dpusm_unbind();
+#endif
 
 	ddt_unload(spa);
 	brt_unload(spa);
@@ -10795,6 +10821,12 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			 * 'readonly' and 'cachefile' are also non-persistent
 			 * properties.
 			 */
+			break;
+		case ZPOOL_PROP_DPUSM_PROVIDER:
+			strval = fnvpair_value_string(elem);
+			/* Runtime-only, matching Original Z.I.A.'s provider property. */
+			spa_history_log_internal(spa, "set", tx,
+			    "%s=%s", elemname, strval);
 			break;
 		case ZPOOL_PROP_COMMENT:
 			strval = fnvpair_value_string(elem);

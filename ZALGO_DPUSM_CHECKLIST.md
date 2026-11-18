@@ -94,6 +94,23 @@ ZFS and DPUSM, but the design is not settled.
       dataset/block-selected subtype.  This is the implementation issue
       behind the pool-context dispatch design, not a change to the algorithm
       selection model.
+- [x] Add a ZFS pool-property control path for `dpusm_provider` through the
+      existing DPUSM Zalgo shim.  Match Original Z.I.A.: validate and apply
+      the provider during property validation, including pool creation, but
+      do not persist the runtime provider setting in pool MOS properties.
+- [x] Reset the active DPUSM provider on pool export/import by omitting the
+      runtime-only provider from persisted pool properties.
+- [x] Keep the software provider's DPUSM registration independent from Zalgo
+      selection; `dpusm_provider` is the sole user-facing activation path.
+- [x] Match Original Z.I.A.'s creation behavior: accept and activate
+      `dpusm_provider` supplied to `zpool create -o`, while leaving the
+      runtime selection out of persisted pool properties.
+- [x] Release the runtime DPUSM provider during pool destruction after vdev
+      and DSL teardown, matching Original Z.I.A.'s destroy-time provider
+      cleanup.
+- [ ] Replace the prototype's single global DPUSM binding with pool-aware
+      provider contexts before allowing different pools to select different
+      DPUSM providers concurrently.
 - [ ] Hold the selected Zalgo node and DPUSM provider handle through the
       complete operation and any software retry, including invalidation and
       provider-replacement races.
@@ -231,11 +248,11 @@ items only when that work is explicitly brought into this branch.
 
 ## Lifetime, registration, and unload safety
 
-- [ ] Add safe provider unregister support before treating an external or
+- [x] Add safe provider unregister support before treating an external or
       optional DPUSM provider as unloadable.
-- [ ] Protect `zr_current`, `zr_best`, provider nodes, and active holds while
+- [x] Protect `zr_current`, `zr_best`, provider nodes, and active holds while
       changing provider availability.
-- [ ] Integrate provider/module references with DPUSM device and queue
+- [x] Integrate provider/module references with DPUSM device and queue
       lifetimes.
 - [ ] Verify teardown after pool destruction, export/import, module reload,
       device removal, and DPUSM shutdown.

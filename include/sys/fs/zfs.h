@@ -323,6 +323,8 @@ typedef enum {
 	ZPOOL_PROP_SELOG_USED,
 	ZPOOL_PROP_SELOG_EXPANDSZ,
 	ZPOOL_PROP_SELOG_FRAGMENTATION,
+	/* Runtime-only DPUSM selection; intentionally not persisted. */
+	ZPOOL_PROP_DPUSM_PROVIDER,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 

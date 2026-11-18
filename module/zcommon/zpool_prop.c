@@ -217,6 +217,9 @@ zpool_prop_init(void)
 	zprop_register_index(ZPOOL_PROP_AUTOTRIM, "autotrim",
 	    SPA_AUTOTRIM_OFF, PROP_DEFAULT, ZFS_TYPE_POOL,
 	    "on | off", "AUTOTRIM", boolean_table, sfeatures);
+	zprop_register_string(ZPOOL_PROP_DPUSM_PROVIDER, "dpusm_provider", NULL,
+	    PROP_DEFAULT, ZFS_TYPE_POOL, "<DPUSM Provider Name> | off",
+	    "DPUSM_PROVIDER", sfeatures);
 
 	/* hidden properties */
 	zprop_register_hidden(ZPOOL_PROP_NAME, "name", PROP_TYPE_STRING,

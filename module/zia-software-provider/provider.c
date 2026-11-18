@@ -87,12 +87,10 @@
  *     2. Create a zpool
  *
  *     3. Select this provider with
- *            load the module as zia_software_provider, then bind it through
- *            the Zalgo DPUSM shim
- *
- *     4. Enable "offloading" of operations with
- *            bind zia_software_provider through the Zalgo DPUSM shim
- *            zpool set zia_raidz1_gen=on <zpool>
+ *            zpool set dpusm_provider=zia_software_provider <zpool>
+	 *
+	 *     4. Enable "offloading" of operations with
+	 *            zpool set zia_raidz1_gen=on <zpool>
  *            zpool set zia_raidz2_gen=on <zpool>
  *            zpool set zia_raidz3_gen=on <zpool>
  *            zpool set zia_raidz1_rec=on <zpool>
@@ -102,6 +100,10 @@
  *            zpool set zia_disk_write=on <zpool>
  *
  *     5. Use the zpool as you would normally
+ *
+ *     Before unloading this module, disable the provider first:
+ *
+ *            zpool set dpusm_provider=off <zpool>
  *
  *     Notes:
  *         If a ZFS IO stage is not run, enabling a Z.I.A. offload
@@ -468,13 +470,6 @@ sw_provider_init(void)
 	if (error != 0)
 		goto fail;
 
-	/* Bind the test provider after DPUSM has registered its name. */
-	error = zalgo_shim_dpusm_bind(module_name(THIS_MODULE));
-	if (error != 0) {
-		(void) dpusm_unregister_bsd(THIS_MODULE);
-		goto fail;
-	}
-
 	return (0);
 
 fail:
@@ -485,7 +480,6 @@ fail:
 static void __exit
 sw_provider_exit(void)
 {
-	zalgo_shim_dpusm_unbind();
 	dpusm_unregister_bsd(THIS_MODULE);
 
 	/* "accelerator" API finalization */

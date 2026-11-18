@@ -23,6 +23,8 @@
 
 typedef struct spa spa_t;
 
+typedef struct zalgo_registration zalgo_registration_t;
+
 /* Provider registration flags.  Existing registration calls are software. */
 #define	ZALGO_PROVIDER_SOFTWARE	0
 #define	ZALGO_PROVIDER_ACCELERATED	(1U << 0)
@@ -38,6 +40,10 @@ int zalgo_##ty##_register(zalgo_##ty##_subtype_t subtype, const char *id, \
 int zalgo_##ty##_register_flags(zalgo_##ty##_subtype_t subtype,	\
     const char *id, const char *desc, const zalgo_##ty##_ops_t *ops,	\
 	uint_t flags);							\
+int zalgo_##ty##_register_owner(zalgo_##ty##_subtype_t subtype,	\
+    const char *id, const char *desc, const zalgo_##ty##_ops_t *ops,	\
+	uint_t flags, void *owner, zalgo_registration_t **registration); \
+int zalgo_##ty##_unregister(zalgo_registration_t *registration);	\
 zalgo_##ty##_hold_t *zalgo_##ty##_hold(zalgo_##ty##_subtype_t subtype);	\
 zalgo_##ty##_hold_t *zalgo_##ty##_hold_fallback(				\
     zalgo_##ty##_subtype_t subtype);					\
@@ -228,8 +234,33 @@ int zalgo_shim_my_fletcher_register(void);
 #ifdef DPUSM
 int zalgo_shim_dpusm_register(void);
 int zalgo_shim_dpusm_bind(const char *provider_name);
+int zalgo_shim_dpusm_bind_owner(const char *provider_name, void *owner);
+int zalgo_shim_dpusm_provider_validate(const char *provider_name);
+int zalgo_shim_dpusm_provider_set(const char *provider_name);
+const char *zalgo_shim_dpusm_provider_name(void);
 void zalgo_shim_dpusm_unbind(void);
 void zalgo_shim_dpusm_fini(void);
+#else
+static inline int
+zalgo_shim_dpusm_provider_validate(const char *provider_name)
+{
+	return (provider_name == NULL || provider_name[0] == '\0' ||
+	    strcmp(provider_name, "NULL") == 0 ||
+	    strcmp(provider_name, "none") == 0 ||
+	    strcmp(provider_name, "off") == 0 ? 0 : ENOTSUP);
+}
+
+static inline int
+zalgo_shim_dpusm_provider_set(const char *provider_name)
+{
+	return (zalgo_shim_dpusm_provider_validate(provider_name));
+}
+
+static inline const char *
+zalgo_shim_dpusm_provider_name(void)
+{
+	return (NULL);
+}
 #endif
 
 #endif
