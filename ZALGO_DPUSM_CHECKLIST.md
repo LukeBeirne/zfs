@@ -143,7 +143,8 @@ ZFS and DPUSM, but the design is not settled.
       when `dpusm_provider` changes.
 - [x] Add the runtime-only `dpusm_checksum` gate and ensure its final value is
       applied after property validation regardless of nvlist property order.
-- [ ] Add user documentation and tests for dataset algorithm settings
+- [x] Add user documentation and a runtime validation plan for dataset
+      algorithm settings interacting with pool-level DPUSM settings.
       interacting with pool-level DPUSM settings.
 
 ## DPUSM shim investigation
