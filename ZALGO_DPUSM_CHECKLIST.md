@@ -114,10 +114,12 @@ ZFS and DPUSM, but the design is not settled.
 - [x] Hold the selected Zalgo node and DPUSM provider handle through the
       complete operation and any software retry, including invalidation and
       provider-replacement races.
-- [ ] Define a compression operation result that distinguishes provider
+- [x] Define a compression operation result that distinguishes provider
       failure from successful incompressible input.  A compressed-size return
       value alone must not make a hardware failure look like a valid
-      uncompressed result.
+      uncompressed result.  The adapter is intentionally not wired into the
+      existing size_t-only ZFS compression path until the result boundary is
+      implemented.
 
 ### Configuration scope and policy
 

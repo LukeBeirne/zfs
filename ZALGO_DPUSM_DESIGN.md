@@ -77,6 +77,32 @@ The implementation deliberately does not yet distinguish retryable provider
 failures from checksum mismatches, authentication failures, or malformed
 compressed data. That classification remains a separate follow-up.
 
+## Compression result contract
+
+The current ZFS compression ABI returns only `size_t`. It uses a returned
+length greater than the destination capacity to mean that the input was not
+compressible, and `zio_compress_data()` then reports the original input length.
+That representation cannot safely carry a DPUSM provider failure: a hardware
+failure must not be mistaken for valid incompressible data.
+
+Any future Zalgo compression operation must therefore return an explicit
+result alongside the output length:
+
+- `OK`: compressed output is valid and `dst_len` is its length;
+- `INCOMPRESSIBLE`: the operation completed successfully but compression did
+  not improve the input, so the caller may use the original input length;
+- `PROVIDER_FAILURE`: the accelerator failed or became unavailable, so the
+  caller must retry the same algorithm through software without interpreting
+  `dst_len`;
+- `INVALID`: arguments or algorithm selection are invalid and should be
+  reported rather than treated as incompressible input.
+
+The DPUSM `compress()` API already returns a status and output length, but the
+ZFS/Zalgo adapter must preserve that status until the fallback decision is
+made. Compression dispatch is intentionally not wired into the existing
+size_t-only `zio_compress_data()` path until this result contract has a
+caller-visible compatibility boundary.
+
 The shim classifies synchronous DPUSM checksum failures internally as
 unavailable, unsupported, invalidated, or generic provider failures. A pool
 context counts consecutive operation failures; after three failures it
