@@ -239,19 +239,23 @@ items only when that work is explicitly brought into this branch.
       AES-CCM cipher contexts used by the shim. The affected shim object
       compiles successfully; runtime cipher verification remains a separate
       privileged/runtime validation concern.
-- [ ] Add configure-time compile/link capability checks for the complete
+- [x] Add configure-time compile/link capability checks for the complete
       OpenSSL API used by the Zalgo shim rather than checking only the
-      existing basic `libcrypto` functionality.
-- [ ] Make the OpenSSL Zalgo shim independently optional: if its headers,
+      existing basic `libcrypto` functionality. The probe covers the provider
+      MAC API, fetched AES-GCM, context copying, AEAD setup, encryption, and
+      tag retrieval.
+- [x] Make the OpenSSL Zalgo shim independently optional: if its headers,
       symbols, or library are unavailable, omit only
       `libzalgo_shim_openssl.la` and continue building Zalgo, `libzpool`, and
-      the normal software providers.
-- [ ] Keep optional-provider registration conditional on whether the provider
+      the normal software providers. The shim is now conditional on the
+      configure probe.
+- [x] Keep optional-provider registration conditional on whether the provider
       was compiled, so an unavailable OpenSSL dependency does not become a
       whole-ZFS build or initialization failure.
-- [ ] Apply the same model to the future DPUSM shim: unavailable DPUSM should
+- [x] Apply the same model to the future DPUSM shim: unavailable DPUSM should
       omit that provider while leaving Zalgo core, CPU providers, and CI
-      builds functional.
+      builds functional. The existing DPUSM configure/Kbuild conditional path
+      already provides this behavior.
 
 ## Lifetime, registration, and unload safety
 

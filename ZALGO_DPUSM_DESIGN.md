@@ -138,6 +138,14 @@ made. Compression dispatch is intentionally not wired into the existing
 size_t-only `zio_compress_data()` path until this result contract has a
 caller-visible compatibility boundary.
 
+The userspace OpenSSL shim is independently configured from the base
+libcrypto dependency. Its probe checks the provider MAC API, fetched AES
+ciphers, cipher-context copying, AEAD setup, encryption, and tag retrieval.
+If that complete API is unavailable, the shim library and its registration are
+omitted while the core Zalgo, software providers, and libzpool continue to
+build. DPUSM follows the same optional-provider rule through its existing
+configure and Kbuild conditionals.
+
 The shim classifies synchronous DPUSM checksum failures internally as
 unavailable, unsupported, invalidated, or generic provider failures. A pool
 context counts consecutive operation failures; after three failures it

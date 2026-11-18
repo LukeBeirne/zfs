@@ -217,7 +217,6 @@ libzpool_la_LIBADD = \
 	libzalgo.la \
 	libzalgo_shim_fletcher.la \
 	libzalgo_shim_icp.la \
-	libzalgo_shim_openssl.la \
 	libicp.la \
 	libnvpair.la \
 	libzstd.la \
@@ -225,6 +224,10 @@ libzpool_la_LIBADD = \
 
 if ZALGO_DPUSM_ENABLED
 libzpool_la_LIBADD += libzalgo_shim_dpusm.la
+endif
+
+if OPENSSL_ZALGO_ENABLED
+libzpool_la_LIBADD += libzalgo_shim_openssl.la
 endif
 
 libzpool_la_LIBADD += $(LIBCLOCK_GETTIME) $(LIBCRYPTO_LIBS) $(ZLIB_LIBS) -lm

@@ -408,7 +408,9 @@ kernel_init(int mode)
 
 	zalgo_init();
 	zalgo_shim_icp_register();
+#ifdef OPENSSL_ZALGO_ENABLED
 	zalgo_shim_openssl_register();
+#endif
 	zalgo_shim_fletcher_register();
 #ifdef DPUSM
 	zalgo_shim_dpusm_register();
