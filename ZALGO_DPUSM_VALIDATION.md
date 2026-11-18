@@ -65,3 +65,30 @@ edges, native and byteswapped Fletcher4, concurrent I/O, partial/failing
 operations, checksum verification, repair, scrub, encryption, and ordinary
 ZFS redundancy behavior. Compare checksums and pool status against a software
 baseline and record any provider or data-integrity errors separately.
+
+## Completed hpe2 validation
+
+Using only `/dev/nvme0n1` through `/dev/nvme4n1`, the following disposable
+validation completed on 2026-11-18 with the DPUSM-enabled `zalgo-zia` build:
+
+- Created a striped pool and a `raidz2` pool sequentially, each with
+  `dpusm_provider=zia_software_provider`.
+- Performed 1 GiB fio writes and reads on both layouts with Fletcher4 and LZ4
+  datasets.
+- Disabled and re-enabled `dpusm_checksum`; normal writes continued to work
+  with the acceleration gate disabled.
+- Disabled and re-selected the DPUSM provider; software-path I/O succeeded
+  while disabled and DPUSM-backed I/O resumed after re-selection.
+- Scrubbed both layouts; both completed with zero repaired bytes, zero errors,
+  and `errors: No known data errors`.
+- Exported/imported the striped pool; the runtime-only provider reset to `-`,
+  then worked again after explicit re-selection.
+- Offlined one RAIDZ2 device, successfully read 1 GiB while degraded, onlined
+  the device, and observed completion of a zero-error resilver.
+- Destroyed both temporary pools and verified no pools or ZFS mounts remained.
+
+This validates normal provider selection, pool-policy changes, runtime reset,
+striped and RAIDZ2 I/O, scrub, degraded read, and resilver behavior. It does
+not yet validate induced DPUSM operation failures/quarantine, corruption
+injection, encryption, concurrent multi-pool isolation, device removal, or
+module unload ordering.

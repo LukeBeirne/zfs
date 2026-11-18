@@ -198,7 +198,10 @@ ZFS and DPUSM, but the design is not settled.
 - [x] Add provider health, quarantine, or re-selection behavior if needed.
 - [x] Distinguish provider failure from ordinary checksum mismatch,
       authentication failure, unsupported request, and device unavailability.
-- [ ] Preserve normal ZFS redundancy, repair, and error-reporting behavior.
+- [x] Preserve normal ZFS redundancy, repair, and error-reporting behavior for
+      the validated RAIDZ2 degraded-read and zero-error resilver path. Data
+      corruption injection, encryption, and broader recovery coverage remain
+      open.
 
 ## Asynchronous execution
 
@@ -284,8 +287,10 @@ items only when that work is explicitly brought into this branch.
       workloads.  Add performance measurements only for operation types that
       already have Zalgo benchmarks; report a zero kstat score for operation
       types without a benchmark when a score is required.
-- [ ] Validate normal ZFS pool I/O, checksum verification, repair, encryption,
-      and recovery behavior on disposable test storage.
+- [x] Validate normal ZFS pool I/O, checksum verification, repair, and
+      recovery behavior on disposable test storage for the tested striped and
+      RAIDZ2 paths. Encryption, corruption injection, and broader recovery
+      coverage remain open.
 
 ## Design decision
 
