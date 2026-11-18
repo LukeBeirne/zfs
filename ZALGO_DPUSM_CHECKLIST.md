@@ -188,8 +188,8 @@ ZFS and DPUSM, but the design is not settled.
 - [x] Retain or identify the best software provider for each algorithm
       independently of the currently selected DPUSM provider.  DPUSM
       selection must not replace the software fallback needed for recovery.
-- [ ] Add provider health, quarantine, or re-selection behavior if needed.
-- [ ] Distinguish provider failure from ordinary checksum mismatch,
+- [x] Add provider health, quarantine, or re-selection behavior if needed.
+- [x] Distinguish provider failure from ordinary checksum mismatch,
       authentication failure, unsupported request, and device unavailability.
 - [ ] Preserve normal ZFS redundancy, repair, and error-reporting behavior.
 

@@ -25,6 +25,16 @@ static const dpusm_uf_t *dpusm;
 static zalgo_registration_t *dpusm_native_registration;
 static zalgo_registration_t *dpusm_swap_registration;
 
+#define ZALGO_DPUSM_FAILURE_QUARANTINE 3
+
+typedef enum zalgo_dpusm_failure_class {
+	ZALGO_DPUSM_FAILURE_NONE,
+	ZALGO_DPUSM_FAILURE_UNAVAILABLE,
+	ZALGO_DPUSM_FAILURE_UNSUPPORTED,
+	ZALGO_DPUSM_FAILURE_INVALIDATED,
+	ZALGO_DPUSM_FAILURE_PROVIDER,
+} zalgo_dpusm_failure_class_t;
+
 typedef struct zalgo_dpusm_context {
 	spa_t *zdc_spa;
 	void *zdc_provider;
@@ -34,6 +44,8 @@ typedef struct zalgo_dpusm_context {
 	boolean_t zdc_checksum;
 	boolean_t zdc_native;
 	boolean_t zdc_swap;
+	uint_t zdc_failures;
+	zalgo_dpusm_failure_class_t zdc_last_failure;
 	kcondvar_t zdc_cv;
 	list_node_t zdc_link;
 } zalgo_dpusm_context_t;
@@ -41,6 +53,7 @@ typedef struct zalgo_dpusm_context {
 static kmutex_t dpusm_context_lock;
 static list_t dpusm_contexts;
 static boolean_t dpusm_contexts_initialized;
+
 #ifdef _KERNEL
 /* DPUSM is an explicit kernel-module dependency in this build. */
 extern const dpusm_uf_t *dpusm_initialize_strong(void)
@@ -48,22 +61,34 @@ extern const dpusm_uf_t *dpusm_initialize_strong(void)
 extern int dpusm_finalize_strong(void) __asm__("dpusm_finalize");
 #endif
 
+static zalgo_dpusm_failure_class_t
+zalgo_dpusm_classify_result(int result);
+
 static int
 zalgo_dpusm_fletcher4(void *provider, const uint8_t *data, size_t datalen,
-    zio_cksum_t *checksum, dpusm_checksum_byteorder_t byteorder)
+    zio_cksum_t *checksum, dpusm_checksum_byteorder_t byteorder,
+    zalgo_dpusm_failure_class_t *failure)
 {
 	void *handle;
 	dpusm_mv_t move;
 	int error = ENOTSUP;
 
+	if (failure != NULL)
+		*failure = ZALGO_DPUSM_FAILURE_NONE;
 	if (dpusm == NULL || provider == NULL ||
 	    dpusm->alloc == NULL || dpusm->free == NULL ||
-	    dpusm->copy.from.generic == NULL || dpusm->checksum == NULL)
+	    dpusm->copy.from.generic == NULL || dpusm->checksum == NULL) {
+		if (failure != NULL)
+			*failure = ZALGO_DPUSM_FAILURE_UNAVAILABLE;
 		return (ENOTSUP);
+	}
 
 	handle = dpusm->alloc(provider, datalen);
-	if (handle == NULL)
+	if (handle == NULL) {
+		if (failure != NULL)
+			*failure = ZALGO_DPUSM_FAILURE_PROVIDER;
 		return (ENOMEM);
+	}
 
 	move.handle = handle;
 	move.offset = 0;
@@ -72,7 +97,29 @@ zalgo_dpusm_fletcher4(void *provider, const uint8_t *data, size_t datalen,
 		error = dpusm->checksum(DPUSM_CHECKSUM_FLETCHER_4,
 		    byteorder, handle, datalen, checksum, sizeof (*checksum));
 	(void) dpusm->free(handle);
+	if (error != DPUSM_OK && failure != NULL)
+		*failure = zalgo_dpusm_classify_result(error);
 	return (error == DPUSM_OK ? 0 : EIO);
+}
+
+static zalgo_dpusm_failure_class_t
+zalgo_dpusm_classify_result(int result)
+{
+	switch (result) {
+	case DPUSM_PROVIDER_NOT_EXISTS:
+	case DPUSM_PROVIDER_UNREGISTERED:
+		return (ZALGO_DPUSM_FAILURE_UNAVAILABLE);
+	case DPUSM_PROVIDER_INVALIDATED:
+		return (ZALGO_DPUSM_FAILURE_INVALIDATED);
+	case DPUSM_NOT_IMPLEMENTED:
+	case DPUSM_NOT_SUPPORTED:
+		return (ZALGO_DPUSM_FAILURE_UNSUPPORTED);
+	case DPUSM_ERROR:
+	case DPUSM_PROVIDER_MISMATCH:
+	case DPUSM_BAD_RESULT:
+	default:
+		return (ZALGO_DPUSM_FAILURE_PROVIDER);
+	}
 }
 
 static int
@@ -80,7 +127,7 @@ zalgo_dpusm_fletcher4_native(const uint8_t *data, size_t datalen,
     zio_cksum_t *checksum)
 {
 	return (zalgo_dpusm_fletcher4(NULL, data, datalen, checksum,
-	    DPUSM_BYTEORDER_NATIVE));
+	    DPUSM_BYTEORDER_NATIVE, NULL));
 }
 
 static int
@@ -88,7 +135,7 @@ zalgo_dpusm_fletcher4_byteswap(const uint8_t *data, size_t datalen,
     zio_cksum_t *checksum)
 {
 	return (zalgo_dpusm_fletcher4(NULL, data, datalen, checksum,
-	    DPUSM_BYTEORDER_BYTESWAP));
+	    DPUSM_BYTEORDER_BYTESWAP, NULL));
 }
 
 static int
@@ -100,7 +147,8 @@ zalgo_dpusm_fletcher4_once_abd(abd_t *abd, size_t datalen,
 
 	if (data == NULL)
 		return (ENOMEM);
-	error = zalgo_dpusm_fletcher4(NULL, data, datalen, checksum, byteorder);
+	error = zalgo_dpusm_fletcher4(NULL, data, datalen, checksum, byteorder,
+	    NULL);
 	abd_return_buf_copy(abd, data, datalen);
 	return (error);
 }
@@ -189,6 +237,7 @@ zalgo_dpusm_fletcher4_spa(spa_t *spa, abd_t *abd, size_t datalen,
 {
 	zalgo_dpusm_context_t *ctx = zalgo_shim_dpusm_context_hold(spa);
 	void *data;
+	zalgo_dpusm_failure_class_t failure;
 	int error;
 
 	if (ctx == NULL || !ctx->zdc_checksum ||
@@ -204,8 +253,16 @@ zalgo_dpusm_fletcher4_spa(spa_t *spa, abd_t *abd, size_t datalen,
 		return (ENOMEM);
 	}
 	error = zalgo_dpusm_fletcher4(ctx->zdc_provider, data, datalen,
-	    checksum, byteorder);
+	    checksum, byteorder, &failure);
 	abd_return_buf_copy(abd, data, datalen);
+	if (error != 0) {
+		mutex_enter(&dpusm_context_lock);
+		ctx->zdc_failures++;
+		ctx->zdc_last_failure = failure;
+		if (ctx->zdc_failures >= ZALGO_DPUSM_FAILURE_QUARANTINE)
+			ctx->zdc_checksum = B_FALSE;
+		mutex_exit(&dpusm_context_lock);
+	}
 	zalgo_shim_dpusm_context_rele(ctx);
 	return (error);
 }
@@ -424,6 +481,10 @@ zalgo_shim_dpusm_checksum_set(spa_t *spa, boolean_t enabled)
 	    ctx = list_next(&dpusm_contexts, ctx)) {
 		if (ctx->zdc_spa == spa) {
 			ctx->zdc_checksum = enabled;
+			if (enabled) {
+				ctx->zdc_failures = 0;
+				ctx->zdc_last_failure = ZALGO_DPUSM_FAILURE_NONE;
+			}
 			break;
 		}
 	}

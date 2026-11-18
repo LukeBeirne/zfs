@@ -77,6 +77,14 @@ The implementation deliberately does not yet distinguish retryable provider
 failures from checksum mismatches, authentication failures, or malformed
 compressed data. That classification remains a separate follow-up.
 
+The shim classifies synchronous DPUSM checksum failures internally as
+unavailable, unsupported, invalidated, or generic provider failures. A pool
+context counts consecutive operation failures; after three failures it
+quarantines DPUSM checksum use for that pool by disabling its runtime checksum
+gate. The next explicit provider selection or checksum-gate update can restore
+use after the caller has decided the provider is healthy. Checksum mismatches
+remain ZFS data-integrity results and are not classified as provider failures.
+
 ## Replacement and teardown
 
 Provider replacement validates and acquires the new provider before detaching
