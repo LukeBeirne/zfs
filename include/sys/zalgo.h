@@ -215,6 +215,40 @@ typedef struct {
 
 ZALGO_DECLARE_API(cipher)
 
+/* ========== */
+
+typedef enum {
+	ZG_COMPRESS_GZIP,
+	ZG_COMPRESS_LZ4,
+	ZG_COMPRESS_ZSTD,
+	ZG_COMPRESS_SUBTYPE_MAX,
+} zalgo_compress_subtype_t;
+
+typedef enum {
+	ZALGO_COMPRESS_OK,
+	ZALGO_COMPRESS_INCOMPRESSIBLE,
+	ZALGO_COMPRESS_PROVIDER_FAILURE,
+	ZALGO_COMPRESS_INVALID,
+} zalgo_compress_result_t;
+
+typedef struct {
+	int (*zgc_op_compress_spa)(spa_t *spa, abd_t *src, abd_t *dst,
+	    size_t s_len, size_t d_len, int level, size_t *c_len,
+	    zalgo_compress_result_t *result);
+	int (*zgc_op_decompress_spa)(spa_t *spa, abd_t *src, abd_t *dst,
+	    size_t s_len, size_t d_len, int *level);
+} zalgo_compress_ops_t;
+
+ZALGO_DECLARE_API(compress)
+
+int zalgo_compress_data_fallback_spa(spa_t *spa,
+	    zalgo_compress_subtype_t subtype, abd_t *src, abd_t *dst,
+	    size_t s_len, size_t d_len, int level, size_t *c_len,
+	    zalgo_compress_result_t *result);
+int zalgo_decompress_data_fallback_spa(spa_t *spa,
+	    zalgo_compress_subtype_t subtype, abd_t *src, abd_t *dst,
+	    size_t s_len, size_t d_len, int *level);
+
 #define	zalgo_cipher_open(hold, ...)	\
 	(hold)->zh_ops->zgc_op_open(__VA_ARGS__)
 #define	zalgo_cipher_close(hold, ...)	\
@@ -243,6 +277,8 @@ int zalgo_shim_dpusm_register(void);
 int zalgo_shim_dpusm_provider_validate(const char *provider_name);
 int zalgo_shim_dpusm_provider_set(spa_t *spa, const char *provider_name);
 int zalgo_shim_dpusm_checksum_set(spa_t *spa, boolean_t enabled);
+int zalgo_shim_dpusm_compress_set(spa_t *spa, boolean_t enabled);
+int zalgo_shim_dpusm_decompress_set(spa_t *spa, boolean_t enabled);
 int zalgo_shim_dpusm_provider_name(spa_t *spa, char *name, size_t size);
 void zalgo_shim_dpusm_context_destroy(spa_t *spa);
 void zalgo_shim_dpusm_fini(void);
@@ -265,6 +301,22 @@ zalgo_shim_dpusm_provider_set(spa_t *spa, const char *provider_name)
 
 static inline int
 zalgo_shim_dpusm_checksum_set(spa_t *spa, boolean_t enabled)
+{
+	(void) spa;
+	(void) enabled;
+	return (0);
+}
+
+static inline int
+zalgo_shim_dpusm_compress_set(spa_t *spa, boolean_t enabled)
+{
+	(void) spa;
+	(void) enabled;
+	return (0);
+}
+
+static inline int
+zalgo_shim_dpusm_decompress_set(spa_t *spa, boolean_t enabled)
 {
 	(void) spa;
 	(void) enabled;

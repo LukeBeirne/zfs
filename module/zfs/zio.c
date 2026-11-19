@@ -545,7 +545,8 @@ static void
 zio_decompress(zio_t *zio, abd_t *data, uint64_t size)
 {
 	if (zio->io_error == 0) {
-		int ret = zio_decompress_data(BP_GET_COMPRESS(zio->io_bp),
+		int ret = zio_decompress_data_spa(zio->io_spa,
+		    BP_GET_COMPRESS(zio->io_bp),
 		    zio->io_abd, data, zio->io_size, size,
 		    &zio->io_prop.zp_complevel);
 
@@ -595,7 +596,8 @@ zio_decrypt(zio_t *zio, abd_t *data, uint64_t size)
 			 * throw away the result after we are finished.
 			 */
 			abd_t *abd = abd_alloc_linear(lsize, B_TRUE);
-			ret = zio_decompress_data(BP_GET_COMPRESS(bp),
+			ret = zio_decompress_data_spa(zio->io_spa,
+			    BP_GET_COMPRESS(bp),
 			    zio->io_abd, abd, zio->io_size, lsize,
 			    &zio->io_prop.zp_complevel);
 			if (ret != 0) {
@@ -2039,7 +2041,7 @@ zio_write_compress(zio_t *zio)
 		else if (compress == ZIO_COMPRESS_EMPTY)
 			psize = lsize;
 		else
-			psize = zio_compress_data(compress, zio->io_abd, &cabd,
+			psize = zio_compress_data_spa(spa, compress, zio->io_abd, &cabd,
 			    lsize,
 			    zio_get_compression_max_size(compress,
 			    spa->spa_gcd_alloc, spa->spa_min_alloc, lsize),

@@ -26,6 +26,7 @@ typedef enum {
 	ZG_DIGEST,
 	ZG_CHECKSUM,
 	ZG_CIPHER,
+	ZG_COMPRESS,
 	ZG_TYPE_MAX,
 } zalgo_type_t;
 
@@ -35,6 +36,7 @@ static const uint_t zalgo_subtype_max[ZG_TYPE_MAX] = {
 	ZG_DIGEST_SUBTYPE_MAX,
 	ZG_CHECKSUM_SUBTYPE_MAX,
 	ZG_CIPHER_SUBTYPE_MAX,
+	ZG_COMPRESS_SUBTYPE_MAX,
 };
 
 static const char *zalgo_type_str[ZG_TYPE_MAX] = {
@@ -43,6 +45,7 @@ static const char *zalgo_type_str[ZG_TYPE_MAX] = {
 	"digest",
 	"checksum",
 	"cipher",
+	"compress",
 };
 
 static const char *zalgo_dummy_subtype_str[ZG_DUMMY_SUBTYPE_MAX] = {
@@ -83,6 +86,12 @@ static const char *zalgo_cipher_subtype_str[ZG_CIPHER_SUBTYPE_MAX] = {
 	"AES-GCM",
 };
 
+static const char *zalgo_compress_subtype_str[ZG_COMPRESS_SUBTYPE_MAX] = {
+	"gzip",
+	"lz4",
+	"zstd",
+};
+
 static const char *unknown = "[unknown]";
 
 static const char *
@@ -110,6 +119,9 @@ zalgo_subtype_to_str(zalgo_type_t type, uint_t subtype)
 	case ZG_CIPHER:
 		return (subtype < ZG_CIPHER_SUBTYPE_MAX ?
 		    zalgo_cipher_subtype_str[subtype] : unknown);
+	case ZG_COMPRESS:
+		return (subtype < ZG_COMPRESS_SUBTYPE_MAX ?
+		    zalgo_compress_subtype_str[subtype] : unknown);
 	default:
 		return (unknown);
 	}
@@ -540,6 +552,51 @@ ZALGO_DEFINE_API(mac, MAC)
 ZALGO_DEFINE_API(digest, DIGEST)
 ZALGO_DEFINE_API(checksum, CHECKSUM)
 ZALGO_DEFINE_API(cipher, CIPHER)
+ZALGO_DEFINE_API(compress, COMPRESS)
+
+int
+zalgo_compress_data_fallback_spa(spa_t *spa,
+    zalgo_compress_subtype_t subtype, abd_t *src, abd_t *dst, size_t s_len,
+    size_t d_len, int level, size_t *c_len, zalgo_compress_result_t *result)
+{
+	zalgo_compress_hold_t *hold = zalgo_compress_hold_spa(spa, subtype);
+	int error;
+
+	if (result != NULL)
+		*result = ZALGO_COMPRESS_PROVIDER_FAILURE;
+	if (hold != NULL && hold->zh_ops->zgc_op_compress_spa != NULL) {
+		error = hold->zh_ops->zgc_op_compress_spa(spa, src, dst, s_len,
+		    d_len, level, c_len, result);
+		zalgo_compress_rele(hold);
+		if (error == 0)
+			return (0);
+	} else if (hold != NULL) {
+		zalgo_compress_rele(hold);
+	}
+
+	return (ZALGO_FALLBACK);
+}
+
+int
+zalgo_decompress_data_fallback_spa(spa_t *spa,
+    zalgo_compress_subtype_t subtype, abd_t *src, abd_t *dst, size_t s_len,
+    size_t d_len, int *level)
+{
+	zalgo_compress_hold_t *hold = zalgo_compress_hold_spa(spa, subtype);
+	int error;
+
+	if (hold != NULL && hold->zh_ops->zgc_op_decompress_spa != NULL) {
+		error = hold->zh_ops->zgc_op_decompress_spa(spa, src, dst, s_len,
+		    d_len, level);
+		zalgo_compress_rele(hold);
+		if (error == 0)
+			return (0);
+	} else if (hold != NULL) {
+		zalgo_compress_rele(hold);
+	}
+
+	return (ZALGO_FALLBACK);
+}
 
 int
 zalgo_checksum_once_fallback(zalgo_checksum_subtype_t subtype,
@@ -600,6 +657,7 @@ static const zalgo_bench_fn_t zalgo_bench_fn[ZG_TYPE_MAX] = {
 	NULL,
 	(zalgo_bench_fn_t)zalgo_checksum_bench,
 	(zalgo_bench_fn_t)zalgo_cipher_bench,
+	NULL,
 };
 
 static void

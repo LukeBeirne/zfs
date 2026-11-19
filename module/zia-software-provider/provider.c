@@ -162,8 +162,12 @@ static int
 sw_provider_algorithms(int *compress, int *decompress,
     int *checksum, int *checksum_byteorder, int *raid)
 {
-	*compress = 0;
-	*decompress = 0;
+	*compress = DPUSM_COMPRESS_GZIP_1 | DPUSM_COMPRESS_GZIP_2 |
+	    DPUSM_COMPRESS_GZIP_3 | DPUSM_COMPRESS_GZIP_4 |
+	    DPUSM_COMPRESS_GZIP_5 | DPUSM_COMPRESS_GZIP_6 |
+	    DPUSM_COMPRESS_GZIP_7 | DPUSM_COMPRESS_GZIP_8 |
+	    DPUSM_COMPRESS_GZIP_9 | DPUSM_COMPRESS_LZ4;
+	*decompress = *compress;
 
 	*checksum = DPUSM_CHECKSUM_FLETCHER_2 | DPUSM_CHECKSUM_FLETCHER_4;
 
@@ -319,7 +323,6 @@ sw_provider_all_zeros(void *handle, size_t offset, size_t size)
 	return (translate_rc(kernel_offloader_all_zeros(handle, offset, size)));
 }
 
-#if 0
 static int
 sw_provider_compress(dpusm_compress_t alg, int level,
     void *src, size_t s_len, void *dst, size_t *d_len)
@@ -373,8 +376,6 @@ sw_provider_decompress(dpusm_compress_t alg, int *level,
 
 	return (translate_rc(kz_rc));
 }
-
-#endif
 
 static int
 sw_provider_checksum(dpusm_checksum_t alg,
@@ -454,6 +455,8 @@ static const dpusm_pf_t sw_provider_functions = {
 	.mem_stats            = sw_provider_mem_stats,
 	.zero_fill            = sw_provider_zero_fill,
 	.all_zeros            = sw_provider_all_zeros,
+	.compress             = sw_provider_compress,
+	.decompress           = sw_provider_decompress,
 	.checksum             = sw_provider_checksum,
 };
 /* END CSTYLED */

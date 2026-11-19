@@ -525,6 +525,10 @@ spa_prop_get_config(spa_t *spa, nvlist_t *nv)
 		kmem_free(dpusm_provider, ZAP_MAXVALUELEN);
 		spa_prop_add_list(nv, ZPOOL_PROP_DPUSM_CHECKSUM, NULL,
 		    spa->spa_dpusm_checksum, ZPROP_SRC_LOCAL);
+		spa_prop_add_list(nv, ZPOOL_PROP_DPUSM_COMPRESS, NULL,
+		    spa->spa_dpusm_compress, ZPROP_SRC_LOCAL);
+		spa_prop_add_list(nv, ZPOOL_PROP_DPUSM_DECOMPRESS, NULL,
+		    spa->spa_dpusm_decompress, ZPROP_SRC_LOCAL);
 
 		spa_prop_add_list(nv, ZPOOL_PROP_DEDUPRATIO, NULL,
 		    ddt_get_pool_dedup_ratio(spa), src);
@@ -956,6 +960,28 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			}
 			break;
 
+		case ZPOOL_PROP_DPUSM_COMPRESS:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && intval > 1)
+				error = SET_ERROR(EINVAL);
+			if (!error) {
+				spa->spa_dpusm_compress = intval != 0;
+				error = zalgo_shim_dpusm_compress_set(spa,
+				    spa->spa_dpusm_compress);
+			}
+			break;
+
+		case ZPOOL_PROP_DPUSM_DECOMPRESS:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && intval > 1)
+				error = SET_ERROR(EINVAL);
+			if (!error) {
+				spa->spa_dpusm_decompress = intval != 0;
+				error = zalgo_shim_dpusm_decompress_set(spa,
+				    spa->spa_dpusm_decompress);
+			}
+			break;
+
 		default:
 			break;
 		}
@@ -969,6 +995,12 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 	if (!error)
 		error = zalgo_shim_dpusm_checksum_set(spa,
 		    spa->spa_dpusm_checksum);
+	if (!error)
+		error = zalgo_shim_dpusm_compress_set(spa,
+		    spa->spa_dpusm_compress);
+	if (!error)
+		error = zalgo_shim_dpusm_decompress_set(spa,
+		    spa->spa_dpusm_decompress);
 
 	if (!error && reset_bootfs) {
 		error = nvlist_remove(props,
@@ -7618,6 +7650,10 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_autotrim = zpool_prop_default_numeric(ZPOOL_PROP_AUTOTRIM);
 	spa->spa_dpusm_checksum = zpool_prop_default_numeric(
 	    ZPOOL_PROP_DPUSM_CHECKSUM) != 0;
+	spa->spa_dpusm_compress = zpool_prop_default_numeric(
+	    ZPOOL_PROP_DPUSM_COMPRESS) != 0;
+	spa->spa_dpusm_decompress = zpool_prop_default_numeric(
+	    ZPOOL_PROP_DPUSM_DECOMPRESS) != 0;
 	spa->spa_dedup_table_quota =
 	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUP_TABLE_QUOTA);
 
@@ -10854,6 +10890,22 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			spa_history_log_internal(spa, "set", tx,
 			    "%s=%lld", elemname,
 			    (longlong_t) spa->spa_dpusm_checksum);
+			break;
+		case ZPOOL_PROP_DPUSM_COMPRESS:
+			spa->spa_dpusm_compress = fnvpair_value_uint64(elem) != 0;
+			(void) zalgo_shim_dpusm_compress_set(spa,
+			    spa->spa_dpusm_compress);
+			spa_history_log_internal(spa, "set", tx,
+			    "%s=%lld", elemname,
+			    (longlong_t) spa->spa_dpusm_compress);
+			break;
+		case ZPOOL_PROP_DPUSM_DECOMPRESS:
+			spa->spa_dpusm_decompress = fnvpair_value_uint64(elem) != 0;
+			(void) zalgo_shim_dpusm_decompress_set(spa,
+			    spa->spa_dpusm_decompress);
+			spa_history_log_internal(spa, "set", tx,
+			    "%s=%lld", elemname,
+			    (longlong_t) spa->spa_dpusm_decompress);
 			break;
 		case ZPOOL_PROP_COMMENT:
 			strval = fnvpair_value_string(elem);

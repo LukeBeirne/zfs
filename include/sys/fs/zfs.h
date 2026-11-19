@@ -327,6 +327,10 @@ typedef enum {
 	ZPOOL_PROP_DPUSM_PROVIDER,
 	/* Runtime-only DPUSM checksum gate; intentionally not persisted. */
 	ZPOOL_PROP_DPUSM_CHECKSUM,
+	/* Runtime-only DPUSM compression gate; intentionally not persisted. */
+	ZPOOL_PROP_DPUSM_COMPRESS,
+	/* Runtime-only DPUSM decompression gate; intentionally not persisted. */
+	ZPOOL_PROP_DPUSM_DECOMPRESS,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
 

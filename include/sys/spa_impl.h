@@ -467,6 +467,8 @@ struct spa {
 	spa_avz_action_t	spa_avz_action;	/* destroy/rebuild AVZ? */
 	uint64_t	spa_autotrim;		/* automatic background trim? */
 	boolean_t	spa_dpusm_checksum;	/* runtime DPUSM checksum gate */
+	boolean_t	spa_dpusm_compress;	/* runtime DPUSM compression gate */
+	boolean_t	spa_dpusm_decompress;	/* runtime DPUSM decompression gate */
 	uint64_t	spa_errata;		/* errata issues detected */
 	spa_stats_t	spa_stats;		/* assorted spa statistics */
 	spa_keystore_t	spa_keystore;		/* loaded crypto keys */

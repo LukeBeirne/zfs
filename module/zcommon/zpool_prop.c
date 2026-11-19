@@ -223,6 +223,12 @@ zpool_prop_init(void)
 	zprop_register_index(ZPOOL_PROP_DPUSM_CHECKSUM, "dpusm_checksum", 1,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "DPUSM_CHECKSUM",
 	    boolean_table, sfeatures);
+	zprop_register_index(ZPOOL_PROP_DPUSM_COMPRESS, "dpusm_compress", 1,
+	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "DPUSM_COMPRESS",
+	    boolean_table, sfeatures);
+	zprop_register_index(ZPOOL_PROP_DPUSM_DECOMPRESS, "dpusm_decompress", 1,
+	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "DPUSM_DECOMPRESS",
+	    boolean_table, sfeatures);
 
 	/* hidden properties */
 	zprop_register_hidden(ZPOOL_PROP_NAME, "name", PROP_TYPE_STRING,

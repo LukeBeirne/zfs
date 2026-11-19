@@ -135,6 +135,40 @@ again, the no-pool ZFS state was checked, and they were unloaded a second time
 in reverse dependency order. Both cycles completed without kernel crash
 signatures. The external `my_fletcher_provider.ko` was not loaded.
 
+## Compression integration validation
+
+The compression change was built with DPUSM enabled and completed:
+
+```text
+MODPOST 3 modules
+exit=0
+```
+
+The existing userspace `make unit` suite also completed successfully with
+`exit=0`, including the existing Zalgo registration tests.
+
+On a disposable striped pool using only `/dev/nvme0n1` through
+`/dev/nvme4n1`, the rebuilt modules and software provider completed:
+
+- LZ4 dataset write/read through the DPUSM compression and decompression
+  path;
+- GZIP-6 dataset write/read through the DPUSM path;
+- ZSTD dataset write/read through the CPU fallback because the current
+  provider does not advertise ZSTD;
+- compression gate-off write through the CPU path;
+- decompression gate-off read through the CPU path;
+- provider-off read through normal software fallback;
+- provider re-enable, scrub, and status verification.
+
+The final pool status was `ONLINE` with zero read, write, or checksum errors,
+`scrub repaired 0B`, and `errors: No known data errors`. The pool was
+destroyed and `zia_software_provider`, `zfs`, `spl`, and `dpusm` were unloaded
+cleanly. No kernel crash signatures were observed and all authorized devices
+remained available.
+
+The validation deliberately does not claim DPUSM ZSTD acceleration: the
+current software provider's capability mask contains GZIP and LZ4 only.
+
 ## No-DPUSM CPU baseline
 
 The Zalgo tree was configured without `--with-dpusm` and built successfully as

@@ -24,6 +24,8 @@
 
 #include <sys/abd.h>
 
+typedef struct spa spa_t;
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -161,14 +163,22 @@ extern size_t zfs_lz4_compress(abd_t *src, abd_t *dst, size_t s_len,
     size_t d_len, int level);
 extern int zfs_lz4_decompress(abd_t *src, abd_t *dst, size_t s_len,
     size_t d_len, int level);
+extern size_t zfs_lz4_compress_buf(void *src, void *dst, size_t s_len,
+    size_t d_len, int level);
+extern int zfs_lz4_decompress_buf(void *src, void *dst, size_t s_len,
+    size_t d_len, int level);
 
 /*
  * Compress and decompress data if necessary.
  */
 extern size_t zio_compress_data(enum zio_compress c, abd_t *src, abd_t **dst,
     size_t s_len, size_t d_len, uint8_t level);
+extern size_t zio_compress_data_spa(spa_t *spa, enum zio_compress c,
+    abd_t *src, abd_t **dst, size_t s_len, size_t d_len, uint8_t level);
 extern int zio_decompress_data(enum zio_compress c, abd_t *src, abd_t *abd,
     size_t s_len, size_t d_len, uint8_t *level);
+extern int zio_decompress_data_spa(spa_t *spa, enum zio_compress c,
+    abd_t *src, abd_t *abd, size_t s_len, size_t d_len, uint8_t *level);
 extern int zio_compress_to_feature(enum zio_compress comp);
 
 #define	ZFS_COMPRESS_WRAP_DECL(name)					\

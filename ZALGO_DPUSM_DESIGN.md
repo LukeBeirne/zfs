@@ -60,10 +60,11 @@ The following remain behind Zalgo/DPUSM and are not ZFS algorithm changes:
 - optional DPUSM configuration, Kbuild linkage, and software-provider test
   module handling.
 
-This boundary means a future compression, RAIDZ, or asynchronous integration
-must first define its caller-visible result and lifetime contract, then add
-only the minimum ZFS plumbing needed to carry pool policy and operation
-context. It should not copy DPUSM provider logic into common ZFS code.
+This boundary means a future RAIDZ or asynchronous integration must first
+define its caller-visible result and lifetime contract, then add only the
+minimum ZFS plumbing needed to carry pool policy and operation context. The
+compression integration below follows this rule and keeps DPUSM provider
+logic out of common ZFS algorithm code.
 
 ## Revisions
 
@@ -137,7 +138,8 @@ The software/ZFS fallback preserves normal checksum and redundancy behavior.
 
 The implementation deliberately does not yet distinguish retryable provider
 failures from checksum mismatches, authentication failures, or malformed
-compressed data. That classification remains a separate follow-up.
+compressed data. That classification remains a separate follow-up for
+operations beyond the compression fallback boundary.
 
 ## Compression result contract
 
@@ -159,11 +161,25 @@ result alongside the output length:
 - `INVALID`: arguments or algorithm selection are invalid and should be
   reported rather than treated as incompressible input.
 
-The DPUSM `compress()` API already returns a status and output length, but the
-ZFS/Zalgo adapter must preserve that status until the fallback decision is
-made. Compression dispatch is intentionally not wired into the existing
-size_t-only `zio_compress_data()` path until this result contract has a
-caller-visible compatibility boundary.
+The DPUSM `compress()` API already returns a status and output length. The
+implemented adapter preserves that status until the fallback decision is
+made, stages source and destination data in temporary provider handles, and
+accepts output only after validating the returned length. The pool-aware ZFS
+adapter uses this explicit boundary while legacy size_t-only callers retain
+the existing CPU path.
+
+For the current provider, an output length at least as large as the source is
+reported as successful incompressible input. Any non-`DPUSM_OK` result,
+allocation/copy failure, invalid output length, or provider unavailability is
+treated as acceleration failure and retried by the normal CPU compressor.
+Compression and decompression failures have independent pool-local gates and
+failure counters; disabling or quarantining one operation does not disable
+checksum acceleration.
+
+The current DPUSM software provider advertises and exercises GZIP levels 1-9
+and LZ4. ZSTD remains on the normal CPU implementation because this provider
+does not advertise a ZSTD capability. The on-disk ZFS compression identifiers
+are unchanged.
 
 The userspace OpenSSL shim is independently configured from the base
 libcrypto dependency. Its probe checks the provider MAC API, fetched AES

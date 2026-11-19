@@ -26,6 +26,7 @@
 #include <sys/zio.h>
 #include <sys/zio_compress.h>
 #include <sys/zstd/zstd.h>
+#include <sys/zalgo.h>
 
 /*
  * Compression vectors.
@@ -78,6 +79,16 @@ zio_complevel_select(spa_t *spa, enum zio_compress compress, uint8_t child,
 		result = parent;
 
 	return (result);
+}
+
+static zalgo_compress_subtype_t
+zio_compress_to_zalgo(enum zio_compress c)
+{
+	if (c >= ZIO_COMPRESS_GZIP_1 && c <= ZIO_COMPRESS_GZIP_9)
+		return (ZG_COMPRESS_GZIP);
+	if (c == ZIO_COMPRESS_LZ4)
+		return (ZG_COMPRESS_LZ4);
+	return (ZG_COMPRESS_ZSTD);
 }
 
 enum zio_compress
@@ -141,6 +152,32 @@ zio_compress_data(enum zio_compress c, abd_t *src, abd_t **dst, size_t s_len,
 	return (c_len);
 }
 
+size_t
+zio_compress_data_spa(spa_t *spa, enum zio_compress c, abd_t *src,
+    abd_t **dst, size_t s_len, size_t d_len, uint8_t level)
+{
+	size_t c_len = s_len;
+	int complevel = zio_compress_table[c].ci_level;
+	zalgo_compress_result_t result;
+
+	if (c == ZIO_COMPRESS_ZSTD) {
+		if (level == ZIO_COMPLEVEL_INHERIT)
+			return (s_len);
+		complevel = level == ZIO_COMPLEVEL_DEFAULT ?
+		    ZIO_ZSTD_LEVEL_DEFAULT : level;
+	}
+	if (*dst == NULL)
+		*dst = abd_alloc_sametype(src, s_len);
+	if (zalgo_compress_data_fallback_spa(spa, zio_compress_to_zalgo(c), src,
+	    *dst, s_len, d_len, complevel, &c_len, &result) == 0) {
+		if (result == ZALGO_COMPRESS_OK && c_len <= d_len)
+			return (c_len);
+		if (result == ZALGO_COMPRESS_INCOMPRESSIBLE)
+			return (s_len);
+	}
+	return (zio_compress_data(c, src, dst, s_len, d_len, level));
+}
+
 int
 zio_decompress_data(enum zio_compress c, abd_t *src, abd_t *dst,
     size_t s_len, size_t d_len, uint8_t *level)
@@ -156,6 +193,19 @@ zio_decompress_data(enum zio_compress c, abd_t *src, abd_t *dst,
 		err = ci->ci_decompress(src, dst, s_len, d_len, ci->ci_level);
 
 	return (err);
+}
+
+int
+zio_decompress_data_spa(spa_t *spa, enum zio_compress c, abd_t *src,
+    abd_t *dst, size_t s_len, size_t d_len, uint8_t *level)
+{
+	int dpusm_level = zio_compress_table[c].ci_level;
+	if (c == ZIO_COMPRESS_ZSTD && level != NULL)
+		dpusm_level = *level;
+	if (zalgo_decompress_data_fallback_spa(spa, zio_compress_to_zalgo(c),
+	    src, dst, s_len, d_len, &dpusm_level) == 0)
+		return (0);
+	return (zio_decompress_data(c, src, dst, s_len, d_len, level));
 }
 
 int

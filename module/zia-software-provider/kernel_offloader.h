@@ -124,6 +124,11 @@ int kernel_offloader_cmp(void *lhs_handle, void *rhs_handle, int *diff);
 int kernel_offloader_zero_fill(void *handle, size_t offset, size_t size);
 int kernel_offloader_all_zeros(void *handle, size_t offset, size_t size);
 
+size_t zfs_lz4_compress_buf(void *src, void *dst, size_t s_len,
+    size_t d_len, int level);
+int zfs_lz4_decompress_buf(void *src, void *dst, size_t s_len,
+    size_t d_len, int level);
+
 /* ZIO Pipeline Stages */
 
 int kernel_offloader_compress(dpusm_compress_t alg, int level,

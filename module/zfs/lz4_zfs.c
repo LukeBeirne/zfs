@@ -53,7 +53,7 @@ int LZ4_uncompress_unknownOutputSize(const char *source, char *dest,
 
 static kmem_cache_t *lz4_cache;
 
-static size_t
+size_t
 zfs_lz4_compress_buf(void *s_start, void *d_start, size_t s_len,
     size_t d_len, int n)
 {
@@ -81,7 +81,11 @@ zfs_lz4_compress_buf(void *s_start, void *d_start, size_t s_len,
 	return (bufsiz + sizeof (bufsiz));
 }
 
-static int
+#ifdef _KERNEL
+EXPORT_SYMBOL(zfs_lz4_compress_buf);
+#endif
+
+int
 zfs_lz4_decompress_buf(void *s_start, void *d_start, size_t s_len,
     size_t d_len, int n)
 {
@@ -107,6 +111,10 @@ zfs_lz4_decompress_buf(void *s_start, void *d_start, size_t s_len,
 		return (1);
 	return (0);
 }
+
+#ifdef _KERNEL
+EXPORT_SYMBOL(zfs_lz4_decompress_buf);
+#endif
 
 ZFS_COMPRESS_WRAP_DECL(zfs_lz4_compress)
 ZFS_DECOMPRESS_WRAP_DECL(zfs_lz4_decompress)

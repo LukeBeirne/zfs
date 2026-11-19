@@ -122,9 +122,14 @@ ZFS and DPUSM, but the design is not settled.
 - [x] Define a compression operation result that distinguishes provider
       failure from successful incompressible input.  A compressed-size return
       value alone must not make a hardware failure look like a valid
-      uncompressed result.  The adapter is intentionally not wired into the
-      existing size_t-only ZFS compression path until the result boundary is
-      implemented.
+      uncompressed result.  The pool-aware adapter now preserves the result
+      boundary while legacy size_t-only callers retain the CPU path.
+- [x] Add synchronous Zalgo compression and decompression dispatch with
+      temporary provider buffers, output-length validation, CPU fallback, and
+      separate compression/decompression pool gates.
+- [x] Wire the current DPUSM software provider's GZIP-1..9 and LZ4 paths.
+      ZSTD remains a validated CPU fallback because this provider does not
+      advertise a ZSTD capability.
 
 ### Configuration scope and policy
 
@@ -279,8 +284,13 @@ items only when that work is explicitly brought into this branch.
 
 ## Validation and measurement
 
-- [ ] Add unit coverage for provider registration, selection, capabilities,
-      errors, fallback, and teardown.
+- [ ] Add dedicated unit coverage for provider registration, selection,
+      capabilities, errors, fallback, and teardown. The existing userspace
+      unit suite passes, but compression-specific provider unit cases remain
+      open.
+- [x] Validate synchronous compression integration with LZ4 and GZIP-6
+      writes/reads, CPU ZSTD fallback, compression/decompression gate
+      toggles, provider-off software fallback, scrub, and clean teardown.
 - [x] Test with DPUSM present, active, provider-disabled, and operation-failing
       through the software provider's checksum failure injection. DPUSM-absent
       and device-unavailable cases remain open.

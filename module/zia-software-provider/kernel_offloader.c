@@ -578,7 +578,6 @@ kernel_offloader_mem_stats(
 	return (KERNEL_OFFLOADER_OK);
 }
 
-#if 0
 /* specific implementation */
 static int
 kernel_offloader_gzip_compress(koh_t *src, size_t s_len,
@@ -586,9 +585,7 @@ kernel_offloader_gzip_compress(koh_t *src, size_t s_len,
 {
 	if (z_compress_level(ptr_start(dst, 0), d_len,
 	    ptr_start(src, 0), s_len, level) != Z_OK) {
-		if (*d_len != src->size) {
-			return (KERNEL_OFFLOADER_ERROR);
-		}
+		*d_len = src->size;
 		return (KERNEL_OFFLOADER_OK);
 	}
 
@@ -601,10 +598,8 @@ kernel_offloader_lz4_compress(koh_t *src, koh_t *dst,
 {
 	*c_len = dst->size;
 
-	if (zfs_lz4_compress_buf(ptr_start(src, 0), ptr_start(dst, 0),
-	    s_len, *c_len, level) == s_len) {
-		return (KERNEL_OFFLOADER_ERROR);
-	}
+	*c_len = zfs_lz4_compress_buf(ptr_start(src, 0), ptr_start(dst, 0),
+	    s_len, *c_len, level);
 
 	return (KERNEL_OFFLOADER_OK);
 }
@@ -695,8 +690,6 @@ kernel_offloader_decompress(dpusm_decompress_t alg, void *level,
 
 	return (status);
 }
-#endif
-
 int
 kernel_offloader_checksum(dpusm_checksum_t alg,
     dpusm_checksum_byteorder_t order, void *data, size_t size,
